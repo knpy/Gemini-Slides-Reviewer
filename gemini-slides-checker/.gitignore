@@ -1,0 +1,22 @@
+# Environment variables
+.env.local
+.env
+.env*.local
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.zip
+
+# Runtime config
+src/config/runtimeConfig.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

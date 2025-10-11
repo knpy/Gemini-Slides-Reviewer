@@ -1,0 +1,15 @@
+{
+  "name": "gemini-slides-checker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that runs Gemini checks against Google Slides content.",
+  "scripts": {
+    "inject:env": "node ./tools/inject-env.js",
+    "package": "mkdir -p dist && zip -r dist/gemini-slides-reviewer.zip manifest.json src assets"
+  },
+  "keywords": [
+    "chrome-extension",
+    "gemini",
+    "google-slides"
+  ]
+}

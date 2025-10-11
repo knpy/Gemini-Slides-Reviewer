@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gemini Slides Reviewer – Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header>
+        <h1>Gemini Slides Reviewer</h1>
+        <p class="subtitle">Configure your Gemini API key and prompt presets.</p>
+      </header>
+
+      <section class="card">
+        <h2>Gemini API key</h2>
+        <p class="helper">
+          The API key is stored securely via <code>chrome.storage.sync</code> and never leaves your device.
+        </p>
+        <label for="api-key-input">API key</label>
+        <div class="key-row">
+          <input id="api-key-input" type="password" autocomplete="off" placeholder="AIza..." />
+          <button id="toggle-key-visibility" type="button">Show</button>
+        </div>
+        <div class="actions">
+          <button id="save-key" class="primary">Save key</button>
+          <button id="clear-key" class="destructive">Remove key</button>
+        </div>
+        <p id="key-status" class="status"></p>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2>Prompt presets</h2>
+            <p class="helper">
+              Tailor the preset prompts. You can sync them across Chrome instances with the same account.
+            </p>
+          </div>
+          <button id="add-prompt" type="button" class="primary">Add prompt</button>
+        </div>
+        <div id="prompts-list" class="prompt-list"></div>
+      </section>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

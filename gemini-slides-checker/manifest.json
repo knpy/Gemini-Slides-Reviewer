@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Slides Reviewer",
+  "version": "0.1.0",
+  "description": "Run Gemini-based content checks on Google Slides directly from the editor.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://docs.google.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Gemini Slides Reviewer"
+  },
+  "options_page": "src/options/options.html",
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://docs.google.com/presentation/*"
+      ],
+      "js": [
+        "src/contentScript/index.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/common/prompts.js",
+        "src/config/runtimeConfig.json"
+      ],
+      "matches": [
+        "https://docs.google.com/*"
+      ]
+    }
+  ]
+}
