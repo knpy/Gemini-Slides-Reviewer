@@ -20,7 +20,9 @@
     selectedPromptId: null,
     ui: {},
     isPanelVisible: false,
-    latestResult: null
+    latestResult: null,
+    isCancelled: false,
+    isRunningBulkCapture: false
   };
 
   let shadowRoot;
@@ -197,6 +199,30 @@
         .button:disabled {
           opacity: 0.65;
           cursor: progress;
+        }
+        .button.cancel {
+          background: #f59e0b;
+        }
+        .button.cancel:hover {
+          background: #d97706;
+        }
+        .progress-bar {
+          width: 100%;
+          height: 6px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 3px;
+          overflow: hidden;
+          margin-top: 8px;
+          display: none;
+        }
+        .progress-bar.visible {
+          display: block;
+        }
+        .progress-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #3b82f6, #8ab4f8);
+          transition: width 0.3s ease;
+          width: 0%;
         }
         .status {
           margin-top: 12px;
@@ -533,6 +559,9 @@
     state.ui.runButton.disabled = true;
 
     try {
+      // First, force-load all thumbnails by scrolling the filmstrip
+      await ensureAllThumbnailsLoaded();
+
       const slideNodes = getSlideOptionNodes();
       const totalSlides = slideNodes.length;
 
@@ -542,35 +571,108 @@
 
       setStatusWithSpinner(`全${totalSlides}スライドを収集中...\n\n`, "streaming");
 
-      // Step 1: Collect all slides
       const allSlides = [];
+
+      // Navigate to first slide using keyboard event
+      if (totalSlides > 0) {
+        document.body.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Home',
+          code: 'Home',
+          keyCode: 36,
+          bubbles: true,
+          cancelable: true
+        }));
+        // Wait for slide transition (optimized from 1000ms)
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+
+      // Step 1: Collect all slides using keyboard navigation with retry logic
+      const maxRetries = 2;
+      const failedSlides = [];
+
       for (let i = 0; i < totalSlides; i++) {
         setStatusWithSpinner(`スライド ${i + 1}/${totalSlides} を収集中...\n\n`, "streaming");
 
-        slideNodes[i].click();
-        await new Promise(resolve => setTimeout(resolve, 500));
+        let screenshot = null;
+        let retryCount = 0;
+        let success = false;
 
-        const summary = await collectPresentationSummary();
-        if (summary?.slides?.[0]) {
-          allSlides.push({
-            number: i + 1,
-            screenshot: summary.slides[0].screenshot
-          });
+        // Retry logic for failed captures
+        while (retryCount <= maxRetries && !success) {
+          try {
+            const summary = await collectPresentationSummary(i + 1);
+
+            if (summary?.slides?.[0]?.screenshot) {
+              screenshot = summary.slides[0].screenshot;
+              success = true;
+              allSlides.push({
+                number: i + 1,
+                screenshot: screenshot
+              });
+              console.log(`[Gemini Slides] Successfully captured slide ${i + 1}`);
+            } else {
+              throw new Error('Screenshot is empty');
+            }
+          } catch (error) {
+            retryCount++;
+            console.warn(`[Gemini Slides] Failed to capture slide ${i + 1}, attempt ${retryCount}/${maxRetries + 1}`, error);
+
+            if (retryCount <= maxRetries) {
+              // Wait a bit longer before retry
+              await new Promise(resolve => setTimeout(resolve, 400));
+            } else {
+              // Mark as failed after all retries
+              failedSlides.push(i + 1);
+              console.error(`[Gemini Slides] Failed to capture slide ${i + 1} after ${maxRetries + 1} attempts`);
+            }
+          }
+        }
+
+        // Navigate to next slide using arrow key (except on last slide)
+        if (i < totalSlides - 1) {
+          document.body.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'ArrowDown',
+            code: 'ArrowDown',
+            keyCode: 40,
+            bubbles: true,
+            cancelable: true
+          }));
+          // Wait for slide transition (optimized from 800ms)
+          await new Promise(resolve => setTimeout(resolve, 600));
         }
       }
 
-      // Step 2: Send all slides to Gemini for holistic analysis
+      // Check if we have partial success
+      if (allSlides.length === 0) {
+        throw new Error("すべてのスライドのキャプチャに失敗しました");
+      }
+
+      if (failedSlides.length > 0) {
+        console.warn(`[Gemini Slides] Failed to capture ${failedSlides.length} slides:`, failedSlides);
+        setStatusWithSpinner(
+          `警告: ${failedSlides.length}枚のスライド (${failedSlides.join(', ')}) のキャプチャに失敗しました。\n` +
+          `${allSlides.length}枚のスライドで分析を続行します...\n\n`,
+          "streaming"
+        );
+        // Give user time to read the warning
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+
+      // Step 2: Create PDF from all screenshots
+      setStatusWithSpinner(`PDFを作成中...\n\n`, "streaming");
+      const pdfDataUrl = await createPDFFromScreenshots(allSlides);
+
+      // Step 3: Send PDF to Gemini for holistic analysis
       setStatusWithSpinner(`全体のストーリーを分析中...\n\n`, "streaming");
 
       const promptText = state.ui.promptTextarea.value.trim();
       const response = await chrome.runtime.sendMessage({
-        type: "GEMINI_RUN_CHECK",
+        type: "GEMINI_RUN_CHECK_PDF",
         payload: {
           prompt: promptText,
-          presentationSummary: {
-            capturedAt: Date.now(),
-            slides: allSlides
-          }
+          pdfData: pdfDataUrl,
+          slideCount: allSlides.length,
+          capturedAt: Date.now()
         }
       });
 
@@ -588,6 +690,148 @@
       state.ui.runAllButton.disabled = false;
       state.ui.runButton.disabled = false;
     }
+  }
+
+  /**
+   * Create a PDF from multiple screenshot images
+   * @param {Array} slides - Array of slide objects with screenshot data
+   * @returns {string} - Base64 encoded PDF data URL
+   */
+  async function createPDFFromScreenshots(slides) {
+    try {
+      console.log(`[Gemini Slides] Creating PDF from ${slides.length} screenshots`);
+
+      // jsPDF is loaded globally from the UMD bundle
+      const { jsPDF } = window.jspdf;
+
+      if (!jsPDF) {
+        throw new Error('jsPDF library not loaded');
+      }
+
+      // Create PDF in A4 landscape format for better slide visibility
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Add screenshot image to PDF page
+        if (slide.screenshot) {
+          try {
+            // Get image dimensions to maintain aspect ratio
+            const img = await loadImage(slide.screenshot);
+            const imgAspect = img.width / img.height;
+            const pageAspect = pageWidth / pageHeight;
+
+            let drawWidth = pageWidth;
+            let drawHeight = pageHeight;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            // Center the image maintaining aspect ratio
+            if (imgAspect > pageAspect) {
+              // Image is wider than page
+              drawHeight = pageWidth / imgAspect;
+              offsetY = (pageHeight - drawHeight) / 2;
+            } else {
+              // Image is taller than page
+              drawWidth = pageHeight * imgAspect;
+              offsetX = (pageWidth - drawWidth) / 2;
+            }
+
+            pdf.addImage(
+              slide.screenshot,
+              'PNG',
+              offsetX,
+              offsetY,
+              drawWidth,
+              drawHeight,
+              undefined,
+              'FAST' // Compression mode
+            );
+
+            // Add slide number as footer
+            pdf.setFontSize(10);
+            pdf.setTextColor(128, 128, 128);
+            pdf.text(
+              `Slide ${slide.number}`,
+              pageWidth / 2,
+              pageHeight - 5,
+              { align: 'center' }
+            );
+
+            console.log(`[Gemini Slides] Added slide ${slide.number} to PDF`);
+          } catch (error) {
+            console.error(`[Gemini Slides] Failed to add slide ${slide.number} to PDF:`, error);
+          }
+        }
+      }
+
+      // Output as base64 data URL
+      const pdfDataUrl = pdf.output('dataurlstring');
+      console.log(`[Gemini Slides] PDF created successfully, size: ${pdfDataUrl.length} chars`);
+
+      return pdfDataUrl;
+    } catch (error) {
+      console.error('[Gemini Slides] PDF creation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load an image from data URL and return Image object
+   */
+  function loadImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  /**
+   * Ensure all thumbnails are loaded by scrolling the filmstrip
+   */
+  async function ensureAllThumbnailsLoaded() {
+    console.log('[Gemini Slides] Loading all thumbnails...');
+
+    // Find the filmstrip scroll container
+    const filmstripScroll = document.querySelector('.punch-filmstrip-scroll');
+    if (!filmstripScroll) {
+      console.warn('[Gemini Slides] Filmstrip scroll container not found');
+      return;
+    }
+
+    // Scroll to the bottom of the filmstrip to load all thumbnails
+    const scrollHeight = filmstripScroll.scrollHeight;
+    const clientHeight = filmstripScroll.clientHeight;
+    const scrollSteps = Math.ceil(scrollHeight / clientHeight) + 1;
+
+    console.log(`[Gemini Slides] Scrolling filmstrip in ${scrollSteps} steps`);
+
+    for (let i = 0; i < scrollSteps; i++) {
+      filmstripScroll.scrollTop = (i * clientHeight);
+      // Optimized wait time from 200ms
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+
+    // Scroll back to top
+    filmstripScroll.scrollTop = 0;
+    // Optimized wait time from 300ms
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    console.log('[Gemini Slides] All thumbnails loaded');
   }
 
   function handleStreamChunk(message) {
@@ -629,6 +873,52 @@
     }
     state.ui.result.className = "status success";
     state.ui.result.textContent = state.latestResult.text;
+
+    // Play completion notification sound
+    playNotificationSound();
+  }
+
+  /**
+   * Play a subtle notification sound when analysis completes
+   * Two-tone chime (ding-dong style)
+   */
+  function playNotificationSound() {
+    try {
+      // Create an AudioContext
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const masterGain = audioContext.createGain();
+      masterGain.connect(audioContext.destination);
+
+      // First tone (higher - "ding")
+      const playTone = (frequency, startTime, duration) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(masterGain);
+
+        // Sine wave for pure chime sound
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, startTime);
+
+        // Envelope: quick attack, smooth decay
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.01); // Attack
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration); // Decay
+
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
+
+      // Two-tone chime: G5 (784Hz) -> E5 (659Hz)
+      const now = audioContext.currentTime;
+      playTone(784, now, 0.4);        // First tone (higher)
+      playTone(659, now + 0.15, 0.5); // Second tone (lower, overlapping)
+
+      console.log('[Gemini Slides] Notification chime played');
+    } catch (error) {
+      console.warn('[Gemini Slides] Could not play notification sound:', error);
+    }
   }
 
   function setStatus(message, variant) {
@@ -642,7 +932,7 @@
     state.ui.result.textContent = message;
   }
 
-  async function collectPresentationSummary() {
+  async function collectPresentationSummary(slideNumber = null) {
     const summary = {
       capturedAt: Date.now(),
       slides: []
@@ -651,13 +941,16 @@
     // Capture screenshot of current slide
     const screenshot = await captureSlideScreenshot();
 
-    // Get slide number
-    const slideNodes = getSlideOptionNodes();
-    const activeOrder = getActiveSlideOrder(slideNodes);
-    const slideNumber = activeOrder !== -1 ? activeOrder + 1 : 1;
+    // Get slide number (use provided or detect)
+    let finalSlideNumber = slideNumber;
+    if (!finalSlideNumber) {
+      const slideNodes = getSlideOptionNodes();
+      const activeOrder = getActiveSlideOrder(slideNodes);
+      finalSlideNumber = activeOrder !== -1 ? activeOrder + 1 : 1;
+    }
 
     summary.slides.push({
-      number: slideNumber,
+      number: finalSlideNumber,
       screenshot: screenshot
     });
 
@@ -666,7 +959,7 @@
 
   async function captureSlideScreenshot() {
     try {
-      // Find the main slide canvas/SVG
+      // Find the main slide canvas/SVG with improved logic
       const canvasSelectors = [
         '#canvas',
         '.punch-viewer-content',
@@ -691,101 +984,175 @@
       console.log('[Gemini Slides] Slide element id:', slideElement.id);
       console.log('[Gemini Slides] Slide element classes:', slideElement.className);
 
-      // Use html2canvas-like approach with native DOM
-      const rect = slideElement.getBoundingClientRect();
-      console.log('[Gemini Slides] Slide element rect:', rect);
+      // Find the correct SVG element with improved filtering
+      let svgElement = await findMainSlideSVG(slideElement);
 
-      // Log children
-      console.log('[Gemini Slides] Slide element children count:', slideElement.children.length);
-      if (slideElement.children.length > 0) {
-        console.log('[Gemini Slides] First child tag:', slideElement.children[0].tagName);
+      if (!svgElement) {
+        console.warn('[Gemini Slides] No suitable SVG found, cannot create screenshot');
+        return null;
       }
+
+      console.log('[Gemini Slides] Selected SVG element with dimensions:',
+                  svgElement.getBoundingClientRect().width, 'x',
+                  svgElement.getBoundingClientRect().height);
+
+      // Get the SVG's bounding rect (not the container)
+      const svgRect = svgElement.getBoundingClientRect();
 
       // Create a canvas to draw the element
       const canvas = document.createElement('canvas');
-      canvas.width = rect.width;
-      canvas.height = rect.height;
       const ctx = canvas.getContext('2d');
 
-      // Try to find SVG in multiple ways
-      let svgElement = slideElement.tagName === 'SVG' ? slideElement : null;
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      console.log('[Gemini Slides] SVG data length:', svgData.length);
 
-      if (!svgElement) {
-        // Look for SVG child
-        svgElement = slideElement.querySelector('svg');
-        console.log('[Gemini Slides] SVG querySelector result:', svgElement);
-      }
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
 
-      if (!svgElement) {
-        // Look for SVG in parent or siblings
-        const parent = slideElement.parentElement;
-        svgElement = parent?.querySelector('svg');
-        console.log('[Gemini Slides] SVG in parent result:', svgElement);
-      }
+      const img = new Image();
 
-      // Try to find all SVGs in document
-      if (!svgElement) {
-        const allSvgs = document.querySelectorAll('svg');
-        console.log('[Gemini Slides] Total SVGs in document:', allSvgs.length);
-        if (allSvgs.length > 0) {
-          // Use the largest SVG (likely the slide)
-          svgElement = Array.from(allSvgs).reduce((largest, svg) => {
-            const svgRect = svg.getBoundingClientRect();
-            const largestRect = largest.getBoundingClientRect();
-            return (svgRect.width * svgRect.height) > (largestRect.width * largestRect.height) ? svg : largest;
-          });
-          console.log('[Gemini Slides] Using largest SVG');
-        }
-      }
+      // Increase resolution by scaling up (2x for higher quality)
+      const scale = 2;
+      const highResWidth = svgRect.width * scale;
+      const highResHeight = svgRect.height * scale;
 
-      console.log('[Gemini Slides] Final SVG element:', svgElement ? svgElement.tagName : 'not found');
+      canvas.width = highResWidth;
+      canvas.height = highResHeight;
 
-      if (svgElement) {
-        const svgData = new XMLSerializer().serializeToString(svgElement);
-        console.log('[Gemini Slides] SVG data length:', svgData.length);
+      const dataUrl = await new Promise((resolve, reject) => {
+        img.onload = () => {
+          // Draw at higher resolution
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, highResWidth, highResHeight);
+          URL.revokeObjectURL(url);
 
-        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
+          // Export as PNG with high quality
+          const result = canvas.toDataURL('image/png', 1.0);
+          console.log('[Gemini Slides] High-res screenshot created:', result.substring(0, 50) + '...');
+          resolve(result);
+        };
+        img.onerror = (error) => {
+          console.error('[Gemini Slides] Image load error:', error);
+          URL.revokeObjectURL(url);
+          reject(error);
+        };
+        img.src = url;
+      });
 
-        const img = new Image();
-
-        // Increase resolution by scaling up (2x or 3x for higher quality)
-        const scale = 2; // 2x resolution
-        const highResWidth = rect.width * scale;
-        const highResHeight = rect.height * scale;
-
-        canvas.width = highResWidth;
-        canvas.height = highResHeight;
-
-        const dataUrl = await new Promise((resolve, reject) => {
-          img.onload = () => {
-            // Draw at higher resolution
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, highResWidth, highResHeight);
-            URL.revokeObjectURL(url);
-
-            // Export as PNG with high quality
-            const result = canvas.toDataURL('image/png', 1.0); // 1.0 = maximum quality
-            console.log('[Gemini Slides] High-res screenshot created:', result.substring(0, 50) + '...');
-            resolve(result);
-          };
-          img.onerror = (error) => {
-            console.error('[Gemini Slides] Image load error:', error);
-            reject(error);
-          };
-          img.src = url;
-        });
-
-        return dataUrl;
-      }
-
-      console.warn('[Gemini Slides] No SVG found, cannot create screenshot');
-      return null;
+      return dataUrl;
     } catch (error) {
       console.error('[Gemini Slides] Screenshot capture failed:', error);
       return null;
     }
+  }
+
+  /**
+   * Find the main slide SVG element with improved filtering logic
+   * to avoid capturing thumbnails or filmstrip SVGs
+   */
+  async function findMainSlideSVG(containerElement) {
+    // Strategy 1: Look for SVG directly in the slide element
+    if (containerElement.tagName === 'SVG') {
+      return containerElement;
+    }
+
+    // Strategy 2: Look for SVG as immediate child
+    const directSvg = containerElement.querySelector('svg');
+    if (directSvg && isMainSlideSVG(directSvg)) {
+      console.log('[Gemini Slides] Found SVG as direct child');
+      return directSvg;
+    }
+
+    // Strategy 3: Look in the parent's children
+    const parent = containerElement.parentElement;
+    if (parent) {
+      const parentSvgs = Array.from(parent.querySelectorAll('svg'));
+      const validSvgs = parentSvgs.filter(svg => isMainSlideSVG(svg));
+      if (validSvgs.length > 0) {
+        // Return the largest valid SVG
+        const mainSvg = validSvgs.reduce((largest, current) => {
+          const currentRect = current.getBoundingClientRect();
+          const largestRect = largest.getBoundingClientRect();
+          return (currentRect.width * currentRect.height) > (largestRect.width * largestRect.height)
+            ? current : largest;
+        });
+        console.log('[Gemini Slides] Found main SVG in parent');
+        return mainSvg;
+      }
+    }
+
+    // Strategy 4: Find all visible SVGs in the viewport and filter
+    const allSvgs = Array.from(document.querySelectorAll('svg'));
+    console.log('[Gemini Slides] Total SVGs in document:', allSvgs.length);
+
+    const visibleAndValid = allSvgs.filter(svg => {
+      if (!isMainSlideSVG(svg)) return false;
+
+      const rect = svg.getBoundingClientRect();
+      // Must be visible and reasonably sized (at least 400x300)
+      return rect.width >= 400 && rect.height >= 300 &&
+             rect.top >= -100 && rect.left >= -100 &&
+             rect.top < window.innerHeight && rect.left < window.innerWidth;
+    });
+
+    console.log('[Gemini Slides] Valid visible SVGs:', visibleAndValid.length);
+
+    if (visibleAndValid.length === 0) {
+      return null;
+    }
+
+    // Return the largest valid visible SVG
+    const mainSvg = visibleAndValid.reduce((largest, current) => {
+      const currentRect = current.getBoundingClientRect();
+      const largestRect = largest.getBoundingClientRect();
+      return (currentRect.width * currentRect.height) > (largestRect.width * largestRect.height)
+        ? current : largest;
+    });
+
+    console.log('[Gemini Slides] Selected main SVG from document');
+    return mainSvg;
+  }
+
+  /**
+   * Check if an SVG element is likely the main slide (not a thumbnail)
+   */
+  function isMainSlideSVG(svg) {
+    if (!svg) return false;
+
+    const rect = svg.getBoundingClientRect();
+
+    // Filter out small SVGs (likely thumbnails)
+    if (rect.width < 400 || rect.height < 300) {
+      return false;
+    }
+
+    // Check if SVG is in the filmstrip area (thumbnails)
+    let parent = svg.parentElement;
+    let depth = 0;
+    while (parent && depth < 10) {
+      const classList = parent.classList;
+      const classString = Array.from(classList).join(' ');
+
+      // Exclude SVGs in filmstrip/thumbnail areas
+      if (classString.includes('filmstrip') ||
+          classString.includes('thumbnail') ||
+          classString.includes('sidebar') ||
+          parent.id?.includes('filmstrip')) {
+        return false;
+      }
+
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    // Check aspect ratio - slides are typically 4:3 or 16:9
+    const aspectRatio = rect.width / rect.height;
+    if (aspectRatio < 1.0 || aspectRatio > 2.0) {
+      return false; // Too narrow or too wide
+    }
+
+    return true;
   }
 
   function extractCurrentSlideContent() {

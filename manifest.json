@@ -32,6 +32,7 @@
         "https://docs.google.com/presentation/*"
       ],
       "js": [
+        "src/lib/jspdf.umd.min.js",
         "src/contentScript/index.js"
       ],
       "run_at": "document_idle"
