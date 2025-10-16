@@ -658,18 +658,21 @@
         await new Promise(resolve => setTimeout(resolve, 1500));
       }
 
-      // Step 2: Send all slides to Gemini for holistic analysis
+      // Step 2: Create PDF from all screenshots
+      setStatusWithSpinner(`PDFを作成中...\n\n`, "streaming");
+      const pdfDataUrl = await createPDFFromScreenshots(allSlides);
+
+      // Step 3: Send PDF to Gemini for holistic analysis
       setStatusWithSpinner(`全体のストーリーを分析中...\n\n`, "streaming");
 
       const promptText = state.ui.promptTextarea.value.trim();
       const response = await chrome.runtime.sendMessage({
-        type: "GEMINI_RUN_CHECK",
+        type: "GEMINI_RUN_CHECK_PDF",
         payload: {
           prompt: promptText,
-          presentationSummary: {
-            capturedAt: Date.now(),
-            slides: allSlides
-          }
+          pdfData: pdfDataUrl,
+          slideCount: allSlides.length,
+          capturedAt: Date.now()
         }
       });
 
@@ -687,6 +690,114 @@
       state.ui.runAllButton.disabled = false;
       state.ui.runButton.disabled = false;
     }
+  }
+
+  /**
+   * Create a PDF from multiple screenshot images
+   * @param {Array} slides - Array of slide objects with screenshot data
+   * @returns {string} - Base64 encoded PDF data URL
+   */
+  async function createPDFFromScreenshots(slides) {
+    try {
+      console.log(`[Gemini Slides] Creating PDF from ${slides.length} screenshots`);
+
+      // jsPDF is loaded globally from the UMD bundle
+      const { jsPDF } = window.jspdf;
+
+      if (!jsPDF) {
+        throw new Error('jsPDF library not loaded');
+      }
+
+      // Create PDF in A4 landscape format for better slide visibility
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Add screenshot image to PDF page
+        if (slide.screenshot) {
+          try {
+            // Get image dimensions to maintain aspect ratio
+            const img = await loadImage(slide.screenshot);
+            const imgAspect = img.width / img.height;
+            const pageAspect = pageWidth / pageHeight;
+
+            let drawWidth = pageWidth;
+            let drawHeight = pageHeight;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            // Center the image maintaining aspect ratio
+            if (imgAspect > pageAspect) {
+              // Image is wider than page
+              drawHeight = pageWidth / imgAspect;
+              offsetY = (pageHeight - drawHeight) / 2;
+            } else {
+              // Image is taller than page
+              drawWidth = pageHeight * imgAspect;
+              offsetX = (pageWidth - drawWidth) / 2;
+            }
+
+            pdf.addImage(
+              slide.screenshot,
+              'PNG',
+              offsetX,
+              offsetY,
+              drawWidth,
+              drawHeight,
+              undefined,
+              'FAST' // Compression mode
+            );
+
+            // Add slide number as footer
+            pdf.setFontSize(10);
+            pdf.setTextColor(128, 128, 128);
+            pdf.text(
+              `Slide ${slide.number}`,
+              pageWidth / 2,
+              pageHeight - 5,
+              { align: 'center' }
+            );
+
+            console.log(`[Gemini Slides] Added slide ${slide.number} to PDF`);
+          } catch (error) {
+            console.error(`[Gemini Slides] Failed to add slide ${slide.number} to PDF:`, error);
+          }
+        }
+      }
+
+      // Output as base64 data URL
+      const pdfDataUrl = pdf.output('dataurlstring');
+      console.log(`[Gemini Slides] PDF created successfully, size: ${pdfDataUrl.length} chars`);
+
+      return pdfDataUrl;
+    } catch (error) {
+      console.error('[Gemini Slides] PDF creation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load an image from data URL and return Image object
+   */
+  function loadImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
   }
 
   /**

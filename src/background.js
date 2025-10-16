@@ -76,6 +76,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "GEMINI_RUN_CHECK_PDF") {
+    (async () => {
+      try {
+        const result = await runGeminiCheckWithPDF(message.payload, sender.tab?.id);
+        sendResponse({ ok: true, result });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    })();
+    return true;
+  }
+
   if (message?.type === "CAPTURE_SCREENSHOT") {
     (async () => {
       try {
@@ -122,6 +137,109 @@ async function resolveApiKey() {
   throw new Error(
     "Gemini API key is not set. Add it in the extension options (chrome://extensions > Details > Extension options)."
   );
+}
+
+async function runGeminiCheckWithPDF(payload, tabId) {
+  const apiKey = await resolveApiKey();
+  if (!payload?.prompt || !payload?.pdfData) {
+    throw new Error("Request missing prompt or PDF data.");
+  }
+
+  const userPrompt = payload.prompt.trim();
+  const slideCount = payload.slideCount || 0;
+
+  // Build enhanced prompt for PDF analysis
+  const enhancedPrompt = `以下の${slideCount}枚のスライドを含むプレゼンテーションPDFを分析してください。各スライドを確認した上で、以下の指示に従ってください：\n\n${userPrompt}`;
+
+  // Extract base64 data from data URL
+  const base64Data = payload.pdfData.split(',')[1];
+  if (!base64Data) {
+    throw new Error("Invalid PDF data URL format.");
+  }
+
+  console.log(`[Gemini API] Sending PDF with ${slideCount} slides to Gemini Vision`);
+
+  const parts = [
+    { text: enhancedPrompt },
+    {
+      inline_data: {
+        mime_type: "application/pdf",
+        data: base64Data
+      }
+    }
+  ];
+
+  const streamEndpoint = GEMINI_ENDPOINT.replace(':generateContent', ':streamGenerateContent');
+  const response = await fetch(`${streamEndpoint}?key=${encodeURIComponent(apiKey)}&alt=sse`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: parts
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini API responded with ${response.status}: ${errorBody}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n').filter(line => line.trim().startsWith('data: '));
+
+      for (const line of lines) {
+        const jsonStr = line.replace('data: ', '');
+        if (jsonStr.trim() === '[DONE]') continue;
+
+        try {
+          const data = JSON.parse(jsonStr);
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            fullText += text;
+            // Send streaming update to content script
+            if (tabId) {
+              chrome.tabs.sendMessage(tabId, {
+                type: "GEMINI_STREAM_CHUNK",
+                chunk: text,
+                fullText: fullText
+              }).catch(() => {
+                // Ignore errors if content script is not ready
+              });
+            }
+          }
+        } catch (parseError) {
+          console.warn("Failed to parse SSE chunk:", parseError);
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!fullText) {
+    throw new Error("Gemini API returned an empty response.");
+  }
+
+  return {
+    text: fullText,
+    model: GEMINI_MODEL,
+    timestamp: Date.now()
+  };
 }
 
 async function runGeminiCheckStreaming(payload, tabId) {

@@ -11,5 +11,8 @@
     "chrome-extension",
     "gemini",
     "google-slides"
-  ]
+  ],
+  "dependencies": {
+    "jspdf": "^2.5.2"
+  }
 }
