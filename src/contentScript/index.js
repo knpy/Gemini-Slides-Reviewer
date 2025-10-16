@@ -98,6 +98,9 @@
     state.ui.saveContextButton?.addEventListener("click", handleSaveContext);
     state.ui.staticContextToggle?.addEventListener("click", handleToggleStaticContext);
 
+    // Phase 2: Project selector
+    state.ui.projectSelect?.addEventListener("change", handleProjectSwitch);
+
     // Phase 2: Load project data
     await loadCurrentProject();
 
@@ -159,26 +162,69 @@
           transform: translateX(0);
         }
         .gemini-panel header {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .gemini-panel header .header-top {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 16px;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
+          margin-bottom: 8px;
         }
         .gemini-panel header h1 {
           margin: 0;
           font-size: 16px;
           font-weight: 600;
         }
-        .gemini-panel header button {
+        .gemini-panel header .header-top button {
           background: transparent;
           border: none;
           color: #9aa0a6;
           font-size: 18px;
           cursor: pointer;
+          padding: 0;
+          line-height: 1;
         }
-        .gemini-panel header button:hover {
+        .gemini-panel header .header-top button:hover {
           color: #fff;
+        }
+        .project-selector {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .project-selector label {
+          font-size: 12px;
+          color: #9aa0a6;
+          margin: 0;
+          white-space: nowrap;
+          text-transform: none;
+          letter-spacing: normal;
+        }
+        .project-selector select {
+          flex: 1;
+          background: #2d2e30;
+          border: 1px solid rgba(138,180,248,0.3);
+          border-radius: 6px;
+          color: #e8eaed;
+          padding: 6px 8px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .project-selector select:hover {
+          border-color: rgba(138,180,248,0.5);
+          background: rgba(138,180,248,0.05);
+        }
+        .project-selector select:focus {
+          outline: none;
+          border-color: #8ab4f8;
+          background: rgba(138,180,248,0.08);
+        }
+        .project-selector select option {
+          background: #2d2e30;
+          color: #e8eaed;
         }
         .gemini-panel main {
           padding: 16px;
@@ -503,8 +549,16 @@
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
         <header>
-          <h1>Gemini Slides Reviewer</h1>
-          <button type=\"button\" aria-label=\"Close panel\">×</button>
+          <div class=\"header-top\">
+            <h1>Gemini Slides Reviewer</h1>
+            <button type=\"button\" aria-label=\"Close panel\">×</button>
+          </div>
+          <div class=\"project-selector\">
+            <label for=\"gemini-project-select\">📁 Project:</label>
+            <select id=\"gemini-project-select\">
+              <option value=\"\">Loading...</option>
+            </select>
+          </div>
         </header>
         <nav class=\"tab-nav\">
           <button class=\"tab-button active\" data-tab=\"review\">レビュー</button>
@@ -546,8 +600,6 @@
 
           <!-- コンテキストタブ -->
           <div class=\"tab-content\" data-tab-content=\"context\">
-            <div class=\"project-name\" id=\"gemini-project-name\">プロジェクト: 読み込み中...</div>
-
             <div class=\"context-section\">
               <div class=\"context-section-title\" data-toggle=\"static-context\">
                 <span>Project Context</span>
@@ -615,7 +667,7 @@
     // Phase 2: Context tab elements
     state.ui.tabButtons = shadowRoot.querySelectorAll(".tab-button");
     state.ui.tabContents = shadowRoot.querySelectorAll(".tab-content");
-    state.ui.projectName = shadowRoot.querySelector("#gemini-project-name");
+    state.ui.projectSelect = shadowRoot.querySelector("#gemini-project-select");
     state.ui.contextPurpose = shadowRoot.querySelector("#gemini-context-purpose");
     state.ui.contextAudience = shadowRoot.querySelector("#gemini-context-audience");
     state.ui.weeklyContextsContainer = shadowRoot.querySelector("#weekly-contexts-container");
@@ -1929,6 +1981,151 @@
   }
 
   /**
+   * プロジェクトセレクトドロップダウンを更新
+   */
+  async function updateProjectSelector() {
+    if (!state.ui.projectSelect) return;
+
+    try {
+      const allProjects = await getAllProjects();
+      const currentPresentationId = extractPresentationId();
+      const currentProjectId = currentPresentationId ? await getProjectIdByUrl(currentPresentationId) : null;
+
+      // ドロップダウンをクリア
+      state.ui.projectSelect.innerHTML = '';
+
+      // プロジェクト一覧を作成（最近更新されたものから順に）
+      const projectEntries = Object.entries(allProjects).sort((a, b) => {
+        const dateA = new Date(a[1].updatedAt || a[1].createdAt);
+        const dateB = new Date(b[1].updatedAt || b[1].createdAt);
+        return dateB - dateA; // 新しい順
+      });
+
+      // 現在のプロジェクトを最初に表示
+      if (currentProjectId && allProjects[currentProjectId]) {
+        const option = document.createElement('option');
+        option.value = currentProjectId;
+        option.textContent = allProjects[currentProjectId].projectName || '無題のプロジェクト';
+        option.selected = true;
+        state.ui.projectSelect.appendChild(option);
+      }
+
+      // 他のプロジェクトを追加
+      projectEntries.forEach(([projectId, project]) => {
+        if (projectId === currentProjectId) return; // 現在のプロジェクトはすでに追加済み
+
+        const option = document.createElement('option');
+        option.value = projectId;
+        option.textContent = project.projectName || '無題のプロジェクト';
+        state.ui.projectSelect.appendChild(option);
+      });
+
+      // 区切り線とオプション
+      if (projectEntries.length > 0) {
+        const separator = document.createElement('option');
+        separator.disabled = true;
+        separator.textContent = '────────────';
+        state.ui.projectSelect.appendChild(separator);
+      }
+
+      // 新規プロジェクト作成オプション
+      const newProjectOption = document.createElement('option');
+      newProjectOption.value = '__new__';
+      newProjectOption.textContent = '+ 新規プロジェクト作成';
+      state.ui.projectSelect.appendChild(newProjectOption);
+
+      console.log('[Gemini Slides] Project selector updated with', projectEntries.length, 'projects');
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to update project selector:', error);
+      state.ui.projectSelect.innerHTML = '<option value="">エラー</option>';
+    }
+  }
+
+  /**
+   * プロジェクト切り替えハンドラー
+   */
+  async function handleProjectSwitch(event) {
+    const selectedProjectId = event.target.value;
+
+    if (selectedProjectId === '__new__') {
+      // 新規プロジェクト作成
+      await createNewProject();
+      return;
+    }
+
+    if (!selectedProjectId) return;
+
+    try {
+      // プロジェクトを読み込む
+      const projectData = await loadProject(selectedProjectId);
+      if (!projectData) {
+        console.error('[Gemini Slides] Project not found:', selectedProjectId);
+        return;
+      }
+
+      // 現在のプレゼンテーションIDに紐付け
+      const presentationId = extractPresentationId();
+      if (presentationId) {
+        await saveUrlProjectMapping(presentationId, selectedProjectId);
+      }
+
+      // state を更新
+      state.currentProjectId = selectedProjectId;
+
+      // UI を更新
+      updateProjectUI(projectData);
+
+      console.log('[Gemini Slides] Switched to project:', selectedProjectId);
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to switch project:', error);
+    }
+  }
+
+  /**
+   * 新規プロジェクトを作成
+   */
+  async function createNewProject() {
+    const projectName = prompt('新しいプロジェクト名を入力してください:', getPresentationTitle() || '無題のプロジェクト');
+
+    if (!projectName) {
+      // キャンセルされた場合、ドロップダウンを元に戻す
+      if (state.currentProjectId && state.ui.projectSelect) {
+        state.ui.projectSelect.value = state.currentProjectId;
+      }
+      return;
+    }
+
+    try {
+      const projectId = generateProjectId();
+      const newProject = {
+        ...clone(DEFAULT_PROJECT_STRUCTURE),
+        projectName: projectName.trim(),
+        createdAt: new Date().toISOString()
+      };
+
+      await saveProject(projectId, newProject);
+
+      // 現在のURLに紐付け
+      const presentationId = extractPresentationId();
+      if (presentationId) {
+        await saveUrlProjectMapping(presentationId, projectId);
+      }
+
+      // state を更新
+      state.currentProjectId = projectId;
+
+      // UI を更新
+      await updateProjectSelector();
+      updateProjectUI(newProject);
+
+      console.log('[Gemini Slides] Created new project:', projectId);
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to create new project:', error);
+      alert('プロジェクトの作成に失敗しました: ' + error.message);
+    }
+  }
+
+  /**
    * 現在のプロジェクトを読み込む
    */
   async function loadCurrentProject() {
@@ -1936,9 +2133,7 @@
       const presentationId = extractPresentationId();
       if (!presentationId) {
         console.warn('[Gemini Slides] Could not extract presentation ID');
-        if (state.ui.projectName) {
-          state.ui.projectName.textContent = 'プロジェクト: URLからIDを取得できません';
-        }
+        await updateProjectSelector();
         return;
       }
 
@@ -1963,6 +2158,7 @@
         state.currentProjectId = projectId;
 
         // UIを更新
+        await updateProjectSelector();
         updateProjectUI(newProject);
         return;
       }
@@ -1972,18 +2168,15 @@
       if (projectData) {
         state.currentProjectId = projectId;
         console.log('[Gemini Slides] Loaded existing project:', projectId);
+        await updateProjectSelector();
         updateProjectUI(projectData);
       } else {
         console.warn('[Gemini Slides] Project data not found for ID:', projectId);
-        if (state.ui.projectName) {
-          state.ui.projectName.textContent = 'プロジェクト: データが見つかりません';
-        }
+        await updateProjectSelector();
       }
     } catch (error) {
       console.error('[Gemini Slides] Failed to load current project:', error);
-      if (state.ui.projectName) {
-        state.ui.projectName.textContent = 'プロジェクト: 読み込みエラー';
-      }
+      await updateProjectSelector();
     }
   }
 
@@ -1992,11 +2185,6 @@
    */
   function updateProjectUI(projectData) {
     if (!projectData) return;
-
-    // プロジェクト名を表示
-    if (state.ui.projectName) {
-      state.ui.projectName.textContent = `プロジェクト: ${projectData.projectName || '無題'}`;
-    }
 
     // 静的コンテキストを表示
     if (state.ui.contextPurpose) {
@@ -2251,19 +2439,16 @@
 
       if (success) {
         console.log('[Gemini Slides] Context saved successfully');
-        // 成功メッセージを表示（レビュータブのステータスエリアを使用）
-        const currentTab = shadowRoot.querySelector('.tab-button.active')?.getAttribute('data-tab');
-        if (currentTab === 'context') {
-          // コンテキストタブでは、プロジェクト名の背景色を一時的に変更
-          if (state.ui.projectName) {
-            const originalBg = state.ui.projectName.style.background;
-            state.ui.projectName.style.background = 'rgba(16, 185, 129, 0.2)';
-            state.ui.projectName.style.borderColor = 'rgba(16, 185, 129, 0.5)';
-            setTimeout(() => {
-              state.ui.projectName.style.background = originalBg;
-              state.ui.projectName.style.borderColor = 'rgba(138,180,248,0.3)';
-            }, 1500);
-          }
+        // 成功メッセージを表示（プロジェクトセレクトの背景色を一時的に変更）
+        if (state.ui.projectSelect) {
+          const originalBg = state.ui.projectSelect.style.background;
+          const originalBorder = state.ui.projectSelect.style.borderColor;
+          state.ui.projectSelect.style.background = 'rgba(16, 185, 129, 0.2)';
+          state.ui.projectSelect.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+          setTimeout(() => {
+            state.ui.projectSelect.style.background = originalBg;
+            state.ui.projectSelect.style.borderColor = originalBorder;
+          }, 1500);
         }
       } else {
         console.error('[Gemini Slides] Failed to save context');
