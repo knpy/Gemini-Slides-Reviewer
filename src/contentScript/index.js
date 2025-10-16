@@ -873,6 +873,44 @@
     }
     state.ui.result.className = "status success";
     state.ui.result.textContent = state.latestResult.text;
+
+    // Play completion notification sound
+    playNotificationSound();
+  }
+
+  /**
+   * Play a subtle notification sound when analysis completes
+   */
+  function playNotificationSound() {
+    try {
+      // Create an AudioContext
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Create oscillator for a pleasant notification tone
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      // Connect nodes
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      // Configure tone (soft chime-like sound)
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // E5 note
+
+      // Configure volume (soft - 10% of max)
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01); // Quick fade in
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3); // Fade out
+
+      // Play the tone
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.3);
+
+      console.log('[Gemini Slides] Notification sound played');
+    } catch (error) {
+      console.warn('[Gemini Slides] Could not play notification sound:', error);
+    }
   }
 
   function setStatus(message, variant) {
