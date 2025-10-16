@@ -880,34 +880,42 @@
 
   /**
    * Play a subtle notification sound when analysis completes
+   * Two-tone chime (ding-dong style)
    */
   function playNotificationSound() {
     try {
       // Create an AudioContext
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const masterGain = audioContext.createGain();
+      masterGain.connect(audioContext.destination);
 
-      // Create oscillator for a pleasant notification tone
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
+      // First tone (higher - "ding")
+      const playTone = (frequency, startTime, duration) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
 
-      // Connect nodes
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
+        oscillator.connect(gainNode);
+        gainNode.connect(masterGain);
 
-      // Configure tone (soft chime-like sound)
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // E5 note
+        // Sine wave for pure chime sound
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, startTime);
 
-      // Configure volume (soft - 10% of max)
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01); // Quick fade in
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3); // Fade out
+        // Envelope: quick attack, smooth decay
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.01); // Attack
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration); // Decay
 
-      // Play the tone
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.3);
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
 
-      console.log('[Gemini Slides] Notification sound played');
+      // Two-tone chime: G5 (784Hz) -> E5 (659Hz)
+      const now = audioContext.currentTime;
+      playTone(784, now, 0.4);        // First tone (higher)
+      playTone(659, now + 0.15, 0.5); // Second tone (lower, overlapping)
+
+      console.log('[Gemini Slides] Notification chime played');
     } catch (error) {
       console.warn('[Gemini Slides] Could not play notification sound:', error);
     }
