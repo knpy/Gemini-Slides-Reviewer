@@ -15,6 +15,30 @@
     return JSON.parse(JSON.stringify(value));
   };
 
+  // ========================================
+  // Phase 1: コアデータ構造
+  // ========================================
+
+  const STORAGE_KEYS_PROJECT = {
+    PROJECTS: 'gemini_projects',
+    URL_PROJECT_MAP: 'gemini_url_project_map'
+  };
+
+  const DEFAULT_PROJECT_STRUCTURE = {
+    projectName: '',
+    createdAt: null,
+    weeklyInputDay: 1,  // デフォルト: 月曜日
+    staticContext: {
+      purpose: '',
+      audience: ''
+    },
+    externalContexts: []
+  };
+
+  // ========================================
+  // State
+  // ========================================
+
   const state = {
     prompts: [],
     selectedPromptId: null,
@@ -22,7 +46,8 @@
     isPanelVisible: false,
     latestResult: null,
     isCancelled: false,
-    isRunningBulkCapture: false
+    isRunningBulkCapture: false,
+    currentProjectId: null  // 現在のプロジェクトID
   };
 
   let shadowRoot;
@@ -63,6 +88,19 @@
     state.ui.addPromptButton?.addEventListener("click", addNewPrompt);
     state.ui.closeButton?.addEventListener("click", togglePanel);
     state.ui.openButton?.addEventListener("click", togglePanel);
+
+    // Phase 2: Tab switching
+    state.ui.tabButtons?.forEach(button => {
+      button.addEventListener("click", handleTabSwitch);
+    });
+
+    // Phase 2: Context management
+    state.ui.saveContextButton?.addEventListener("click", handleSaveContext);
+    state.ui.staticContextToggle?.addEventListener("click", handleToggleStaticContext);
+
+    // Phase 2: Load project data
+    await loadCurrentProject();
+
     // Try to restore last selected prompt for convenience
     const stored = await chrome.storage.sync.get("geminiLastPromptId");
     if (stored?.geminiLastPromptId) {
@@ -283,6 +321,184 @@
           font-size: 12px;
           padding: 20px;
         }
+        .tab-nav {
+          display: flex;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+          padding: 0 16px;
+        }
+        .tab-button {
+          background: transparent;
+          border: none;
+          color: #9aa0a6;
+          padding: 12px 16px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          border-bottom: 2px solid transparent;
+          transition: all 0.2s;
+        }
+        .tab-button:hover {
+          color: #e8eaed;
+        }
+        .tab-button.active {
+          color: #8ab4f8;
+          border-bottom-color: #8ab4f8;
+        }
+        .tab-content {
+          display: none;
+        }
+        .tab-content.active {
+          display: block;
+        }
+        .project-name {
+          background: rgba(138,180,248,0.1);
+          border: 1px solid rgba(138,180,248,0.3);
+          border-radius: 6px;
+          padding: 8px 12px;
+          font-size: 13px;
+          color: #8ab4f8;
+          margin-bottom: 16px;
+        }
+        .context-section {
+          margin-bottom: 24px;
+        }
+        .context-section-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaed;
+          margin-bottom: 12px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          cursor: pointer;
+          user-select: none;
+        }
+        .context-section-title:hover {
+          color: #8ab4f8;
+        }
+        .toggle-icon {
+          font-size: 18px;
+          transition: transform 0.2s;
+        }
+        .toggle-icon.collapsed {
+          transform: rotate(-90deg);
+        }
+        .context-section-content {
+          max-height: 1000px;
+          overflow: hidden;
+          transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+          opacity: 1;
+        }
+        .context-section-content.collapsed {
+          max-height: 0;
+          opacity: 0;
+        }
+        .weekly-input {
+          background: rgba(138,180,248,0.05);
+          border: 1px dashed rgba(138,180,248,0.3);
+          border-radius: 6px;
+          padding: 12px;
+          margin-bottom: 6px;
+        }
+        .weekly-input-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+        .weekly-input-date {
+          font-size: 12px;
+          color: #9aa0a6;
+          cursor: pointer;
+          padding: 2px 6px;
+          border-radius: 4px;
+          transition: all 0.2s;
+          position: relative;
+        }
+        .weekly-input-date:hover {
+          background: rgba(138,180,248,0.1);
+          color: #8ab4f8;
+        }
+        .weekly-input-date:hover::after {
+          content: '✎';
+          margin-left: 6px;
+          font-size: 10px;
+          opacity: 0.7;
+        }
+        .weekly-input-date.editing {
+          background: #2d2e30;
+          border: 1px solid rgba(138,180,248,0.5);
+          color: #e8eaed;
+          padding: 2px 6px;
+        }
+        .date-input {
+          background: #2d2e30;
+          border: 1px solid rgba(138,180,248,0.5);
+          border-radius: 4px;
+          color: #e8eaed;
+          font-size: 12px;
+          padding: 2px 6px;
+          font-family: inherit;
+        }
+        textarea.weekly-textarea {
+          min-height: 80px;
+          background: #2d2e30;
+        }
+        .weekly-add-zone {
+          position: relative;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          transition: opacity 0.2s;
+          margin-bottom: 6px;
+        }
+        .weekly-add-zone:hover {
+          opacity: 1;
+        }
+        .weekly-add-zone::before {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: rgba(138,180,248,0.2);
+        }
+        .weekly-add-button {
+          position: relative;
+          background: #2d2e30;
+          border: 1px solid rgba(138,180,248,0.3);
+          color: #8ab4f8;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1;
+        }
+        .weekly-add-button:hover {
+          background: rgba(138,180,248,0.1);
+          border-color: rgba(138,180,248,0.6);
+          transform: scale(1.1);
+        }
+        .remove-weekly-button {
+          background: transparent;
+          border: none;
+          color: #9aa0a6;
+          font-size: 16px;
+          cursor: pointer;
+          padding: 4px;
+        }
+        .remove-weekly-button:hover {
+          color: #d93025;
+        }
       </style>
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
@@ -290,36 +506,74 @@
           <h1>Gemini Slides Reviewer</h1>
           <button type=\"button\" aria-label=\"Close panel\">×</button>
         </header>
+        <nav class=\"tab-nav\">
+          <button class=\"tab-button active\" data-tab=\"review\">レビュー</button>
+          <button class=\"tab-button\" data-tab=\"context\">コンテキスト</button>
+        </nav>
         <main>
-          <div class=\"field\">
-            <label for=\"gemini-prompt-select\">Prompt preset</label>
-            <select id=\"gemini-prompt-select\"></select>
+          <!-- レビュータブ -->
+          <div class=\"tab-content active\" data-tab-content=\"review\">
+            <div class=\"field\">
+              <label for=\"gemini-prompt-select\">Prompt preset</label>
+              <select id=\"gemini-prompt-select\"></select>
+            </div>
+            <div class=\"field\">
+              <label for=\"gemini-prompt-label\">Prompt name</label>
+              <input id=\"gemini-prompt-label\" type=\"text\" placeholder=\"Clarity review\" />
+            </div>
+            <div class=\"field\">
+              <label for=\"gemini-prompt-text\">Prompt text</label>
+              <textarea id=\"gemini-prompt-text\"></textarea>
+            </div>
+            <div class=\"button-row\">
+              <button class=\"button\" id=\"gemini-run-button\">現在のスライドを分析</button>
+              <button class=\"button\" id=\"gemini-run-all-button\">全スライドを分析</button>
+            </div>
+            <div class=\"button-row\">
+              <button class=\"button secondary\" id=\"gemini-save-prompt\">プリセット保存</button>
+              <button class=\"button secondary\" id=\"gemini-add-prompt\">複製して新規作成</button>
+              <button class=\"button danger\" id=\"gemini-reset-prompt\">デフォルトに戻す</button>
+            </div>
+            <section class=\"field\">
+              <label>Screenshot</label>
+              <div id=\"gemini-screenshot-preview\" class=\"screenshot-preview\"></div>
+            </section>
+            <section class=\"field\">
+              <label>Result</label>
+              <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
+            </section>
           </div>
-          <div class=\"field\">
-            <label for=\"gemini-prompt-label\">Prompt name</label>
-            <input id=\"gemini-prompt-label\" type=\"text\" placeholder=\"Clarity review\" />
+
+          <!-- コンテキストタブ -->
+          <div class=\"tab-content\" data-tab-content=\"context\">
+            <div class=\"project-name\" id=\"gemini-project-name\">プロジェクト: 読み込み中...</div>
+
+            <div class=\"context-section\">
+              <div class=\"context-section-title\" data-toggle=\"static-context\">
+                <span>Project Context</span>
+                <span class=\"toggle-icon\">▼</span>
+              </div>
+              <div class=\"context-section-content\" id=\"static-context-content\">
+                <div class=\"field\">
+                  <label for=\"gemini-context-purpose\">Purpose</label>
+                  <textarea id=\"gemini-context-purpose\" placeholder=\"このプレゼンテーションの目的を入力してください\"></textarea>
+                </div>
+                <div class=\"field\">
+                  <label for=\"gemini-context-audience\">Audience</label>
+                  <textarea id=\"gemini-context-audience\" placeholder=\"想定される聴衆を入力してください\"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class=\"context-section\">
+              <div class=\"context-section-title\">Weekly Updates</div>
+              <div id=\"weekly-contexts-container\"></div>
+            </div>
+
+            <div class=\"button-row\">
+              <button class=\"button\" id=\"gemini-save-context\">コンテキストを保存</button>
+            </div>
           </div>
-          <div class=\"field\">
-            <label for=\"gemini-prompt-text\">Prompt text</label>
-            <textarea id=\"gemini-prompt-text\"></textarea>
-          </div>
-          <div class=\"button-row\">
-            <button class=\"button\" id=\"gemini-run-button\">現在のスライドを分析</button>
-            <button class=\"button\" id=\"gemini-run-all-button\">全スライドを分析</button>
-          </div>
-          <div class=\"button-row\">
-            <button class=\"button secondary\" id=\"gemini-save-prompt\">プリセット保存</button>
-            <button class=\"button secondary\" id=\"gemini-add-prompt\">複製して新規作成</button>
-            <button class=\"button danger\" id=\"gemini-reset-prompt\">デフォルトに戻す</button>
-          </div>
-          <section class=\"field\">
-            <label>Screenshot</label>
-            <div id=\"gemini-screenshot-preview\" class=\"screenshot-preview\"></div>
-          </section>
-          <section class=\"field\">
-            <label>Result</label>
-            <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
-          </section>
         </main>
       </section>
     `;
@@ -357,6 +611,17 @@
     state.ui.resetPromptButton = shadowRoot.querySelector("#gemini-reset-prompt");
     state.ui.result = shadowRoot.querySelector("#gemini-result");
     state.ui.screenshotPreview = shadowRoot.querySelector("#gemini-screenshot-preview");
+
+    // Phase 2: Context tab elements
+    state.ui.tabButtons = shadowRoot.querySelectorAll(".tab-button");
+    state.ui.tabContents = shadowRoot.querySelectorAll(".tab-content");
+    state.ui.projectName = shadowRoot.querySelector("#gemini-project-name");
+    state.ui.contextPurpose = shadowRoot.querySelector("#gemini-context-purpose");
+    state.ui.contextAudience = shadowRoot.querySelector("#gemini-context-audience");
+    state.ui.weeklyContextsContainer = shadowRoot.querySelector("#weekly-contexts-container");
+    state.ui.saveContextButton = shadowRoot.querySelector("#gemini-save-context");
+    state.ui.staticContextToggle = shadowRoot.querySelector("[data-toggle='static-context']");
+    state.ui.staticContextContent = shadowRoot.querySelector("#static-context-content");
   }
 
   function hydratePromptsUI() {
@@ -1424,5 +1689,587 @@
 
   function getActiveSlideIndex() {
     return getActiveSlideOrder(getSlideOptionNodes());
+  }
+
+  // ========================================
+  // Phase 1: ヘルパー関数
+  // ========================================
+
+  /**
+   * ユニークなプロジェクトIDを生成
+   * 形式: proj_[timestamp]_[random]
+   */
+  function generateProjectId() {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    return `proj_${timestamp}_${random}`;
+  }
+
+  /**
+   * Google SlidesのURLからプレゼンテーションIDを抽出
+   * @param {string} url - Google SlidesのURL
+   * @returns {string|null} プレゼンテーションID
+   */
+  function extractPresentationId(url = window.location.href) {
+    const match = url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * 現在のプレゼンテーションのタイトルを取得
+   * @returns {string} タイトル（取得できない場合は空文字列）
+   */
+  function getPresentationTitle() {
+    // Google Slidesのタイトル要素を探す
+    const titleSelectors = [
+      '.docs-title-input',
+      '[role="textbox"][aria-label*="title"]',
+      '[role="textbox"][aria-label*="タイトル"]'
+    ];
+
+    for (const selector of titleSelectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent) {
+        return element.textContent.trim();
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * 2つのタイトルが類似しているか判定（簡易版）
+   * @param {string} title1
+   * @param {string} title2
+   * @param {number} threshold - 類似度しきい値（0-1、デフォルト0.7）
+   * @returns {boolean}
+   */
+  function isSimilarTitle(title1, title2, threshold = 0.7) {
+    if (!title1 || !title2) return false;
+
+    const normalize = (str) => str.toLowerCase().replace(/\s+/g, '');
+    const n1 = normalize(title1);
+    const n2 = normalize(title2);
+
+    // 完全一致
+    if (n1 === n2) return true;
+
+    // レーベンシュタイン距離による類似度判定
+    const maxLen = Math.max(n1.length, n2.length);
+    if (maxLen === 0) return true;
+
+    const distance = levenshteinDistance(n1, n2);
+    const similarity = 1 - distance / maxLen;
+
+    return similarity >= threshold;
+  }
+
+  /**
+   * レーベンシュタイン距離を計算
+   * @param {string} str1
+   * @param {string} str2
+   * @returns {number}
+   */
+  function levenshteinDistance(str1, str2) {
+    const matrix = [];
+
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * プロジェクトデータをChrome Storageに保存
+   * @param {string} projectId
+   * @param {object} projectData
+   */
+  async function saveProject(projectId, projectData) {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.PROJECTS);
+      const projects = stored[STORAGE_KEYS_PROJECT.PROJECTS] || {};
+
+      projects[projectId] = {
+        ...projectData,
+        updatedAt: new Date().toISOString()
+      };
+
+      await chrome.storage.local.set({
+        [STORAGE_KEYS_PROJECT.PROJECTS]: projects
+      });
+
+      console.log('[Gemini Slides] Project saved:', projectId);
+      return true;
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to save project:', error);
+      return false;
+    }
+  }
+
+  /**
+   * プロジェクトデータをChrome Storageから読み込み
+   * @param {string} projectId
+   * @returns {object|null} プロジェクトデータ
+   */
+  async function loadProject(projectId) {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.PROJECTS);
+      const projects = stored[STORAGE_KEYS_PROJECT.PROJECTS] || {};
+      return projects[projectId] || null;
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to load project:', error);
+      return null;
+    }
+  }
+
+  /**
+   * URL→プロジェクトID マッピングを保存
+   * @param {string} presentationId
+   * @param {string} projectId
+   */
+  async function saveUrlProjectMapping(presentationId, projectId) {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.URL_PROJECT_MAP);
+      const mapping = stored[STORAGE_KEYS_PROJECT.URL_PROJECT_MAP] || {};
+
+      mapping[presentationId] = projectId;
+
+      await chrome.storage.local.set({
+        [STORAGE_KEYS_PROJECT.URL_PROJECT_MAP]: mapping
+      });
+
+      console.log('[Gemini Slides] URL mapping saved:', presentationId, '->', projectId);
+      return true;
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to save URL mapping:', error);
+      return false;
+    }
+  }
+
+  /**
+   * URLからプロジェクトIDを取得
+   * @param {string} presentationId
+   * @returns {string|null} プロジェクトID
+   */
+  async function getProjectIdByUrl(presentationId) {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.URL_PROJECT_MAP);
+      const mapping = stored[STORAGE_KEYS_PROJECT.URL_PROJECT_MAP] || {};
+      return mapping[presentationId] || null;
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to get project ID from URL:', error);
+      return null;
+    }
+  }
+
+  /**
+   * すべてのプロジェクトを取得
+   * @returns {object} プロジェクトデータのマップ
+   */
+  async function getAllProjects() {
+    try {
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.PROJECTS);
+      return stored[STORAGE_KEYS_PROJECT.PROJECTS] || {};
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to get all projects:', error);
+      return {};
+    }
+  }
+
+  // ========================================
+  // Phase 2: UI関数
+  // ========================================
+
+  /**
+   * タブを切り替える
+   */
+  function handleTabSwitch(event) {
+    const clickedButton = event.currentTarget;
+    const tabName = clickedButton.getAttribute('data-tab');
+
+    console.log('[Gemini Slides] Switching to tab:', tabName);
+
+    // すべてのタブボタンからactiveクラスを削除
+    state.ui.tabButtons?.forEach(button => {
+      button.classList.remove('active');
+    });
+
+    // クリックされたタブボタンにactiveクラスを追加
+    clickedButton.classList.add('active');
+
+    // すべてのタブコンテンツを非表示
+    state.ui.tabContents?.forEach(content => {
+      content.classList.remove('active');
+    });
+
+    // 対応するタブコンテンツを表示
+    const targetContent = shadowRoot.querySelector(`[data-tab-content="${tabName}"]`);
+    if (targetContent) {
+      targetContent.classList.add('active');
+    }
+  }
+
+  /**
+   * 現在のプロジェクトを読み込む
+   */
+  async function loadCurrentProject() {
+    try {
+      const presentationId = extractPresentationId();
+      if (!presentationId) {
+        console.warn('[Gemini Slides] Could not extract presentation ID');
+        if (state.ui.projectName) {
+          state.ui.projectName.textContent = 'プロジェクト: URLからIDを取得できません';
+        }
+        return;
+      }
+
+      // URLからプロジェクトIDを取得
+      let projectId = await getProjectIdByUrl(presentationId);
+
+      // プロジェクトIDが見つからない場合、新規作成
+      if (!projectId) {
+        projectId = generateProjectId();
+        const title = getPresentationTitle() || '無題のプレゼンテーション';
+
+        const newProject = {
+          ...clone(DEFAULT_PROJECT_STRUCTURE),
+          projectName: title,
+          createdAt: new Date().toISOString()
+        };
+
+        await saveProject(projectId, newProject);
+        await saveUrlProjectMapping(presentationId, projectId);
+
+        console.log('[Gemini Slides] Created new project:', projectId);
+        state.currentProjectId = projectId;
+
+        // UIを更新
+        updateProjectUI(newProject);
+        return;
+      }
+
+      // 既存のプロジェクトを読み込む
+      const projectData = await loadProject(projectId);
+      if (projectData) {
+        state.currentProjectId = projectId;
+        console.log('[Gemini Slides] Loaded existing project:', projectId);
+        updateProjectUI(projectData);
+      } else {
+        console.warn('[Gemini Slides] Project data not found for ID:', projectId);
+        if (state.ui.projectName) {
+          state.ui.projectName.textContent = 'プロジェクト: データが見つかりません';
+        }
+      }
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to load current project:', error);
+      if (state.ui.projectName) {
+        state.ui.projectName.textContent = 'プロジェクト: 読み込みエラー';
+      }
+    }
+  }
+
+  /**
+   * プロジェクトUIを更新
+   */
+  function updateProjectUI(projectData) {
+    if (!projectData) return;
+
+    // プロジェクト名を表示
+    if (state.ui.projectName) {
+      state.ui.projectName.textContent = `プロジェクト: ${projectData.projectName || '無題'}`;
+    }
+
+    // 静的コンテキストを表示
+    if (state.ui.contextPurpose) {
+      state.ui.contextPurpose.value = projectData.staticContext?.purpose || '';
+    }
+    if (state.ui.contextAudience) {
+      state.ui.contextAudience.value = projectData.staticContext?.audience || '';
+    }
+
+    // 静的コンテキストが入力済みの場合は折りたたむ
+    const hasStaticContext = projectData.staticContext?.purpose || projectData.staticContext?.audience;
+    if (hasStaticContext && state.ui.staticContextContent) {
+      state.ui.staticContextContent.classList.add('collapsed');
+      const toggleIcon = state.ui.staticContextToggle?.querySelector('.toggle-icon');
+      if (toggleIcon) {
+        toggleIcon.classList.add('collapsed');
+      }
+    }
+
+    // 週次コンテキストを表示
+    renderWeeklyContexts(projectData.externalContexts || []);
+  }
+
+  /**
+   * 週次コンテキストをレンダリング
+   */
+  function renderWeeklyContexts(contexts) {
+    if (!state.ui.weeklyContextsContainer) return;
+
+    state.ui.weeklyContextsContainer.innerHTML = '';
+
+    // コンテキストがない場合は1つ追加
+    if (contexts.length === 0) {
+      contexts = [{
+        id: `ctx_${Date.now()}`,
+        date: new Date().toISOString().split('T')[0],
+        content: '',
+        status: 'empty',
+        createdAt: new Date().toISOString()
+      }];
+    }
+
+    contexts.forEach((context, index) => {
+      const contextElement = createWeeklyContextElement(context, index);
+      state.ui.weeklyContextsContainer.appendChild(contextElement);
+    });
+  }
+
+  /**
+   * 週次コンテキスト要素を作成
+   */
+  function createWeeklyContextElement(context, index) {
+    const wrapper = document.createElement('div');
+
+    const div = document.createElement('div');
+    div.className = 'weekly-input';
+    div.dataset.contextId = context.id;
+
+    const date = new Date(context.date || context.createdAt);
+    const dateStr = date.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' });
+
+    div.innerHTML = `
+      <div class="weekly-input-header">
+        <span class="weekly-input-date" data-date="${context.date || new Date().toISOString().split('T')[0]}">${dateStr}</span>
+        ${index > 0 ? '<button class="remove-weekly-button" type="button">×</button>' : ''}
+      </div>
+      <textarea class="weekly-textarea" placeholder="議事録や関連情報を入力してください">${context.content || ''}</textarea>
+    `;
+
+    // 日付の編集機能
+    const dateSpan = div.querySelector('.weekly-input-date');
+    if (dateSpan) {
+      dateSpan.addEventListener('click', () => handleDateEdit(dateSpan));
+    }
+
+    // 削除ボタンのイベントリスナー
+    const removeButton = div.querySelector('.remove-weekly-button');
+    if (removeButton) {
+      removeButton.addEventListener('click', () => handleRemoveWeeklyContext(context.id));
+    }
+
+    // ホバーで表示される追加ボタンゾーン
+    const addZone = document.createElement('div');
+    addZone.className = 'weekly-add-zone';
+    addZone.innerHTML = '<button class="weekly-add-button" type="button">+</button>';
+
+    const addButton = addZone.querySelector('.weekly-add-button');
+    addButton.addEventListener('click', () => handleAddWeeklyContextAfter(context.id));
+
+    wrapper.appendChild(div);
+    wrapper.appendChild(addZone);
+
+    return wrapper;
+  }
+
+  /**
+   * 日付の編集ハンドラー
+   */
+  function handleDateEdit(dateSpan) {
+    // すでに編集中の場合は何もしない
+    if (dateSpan.querySelector('.date-input')) return;
+
+    const currentDate = dateSpan.dataset.date;
+    const originalText = dateSpan.textContent;
+
+    // 日付入力フィールドを作成
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.className = 'date-input';
+    input.value = currentDate;
+
+    // 編集状態に変更
+    dateSpan.classList.add('editing');
+    dateSpan.textContent = '';
+    dateSpan.appendChild(input);
+    input.focus();
+
+    // 保存処理
+    const saveDate = () => {
+      const newDate = input.value;
+      if (newDate) {
+        dateSpan.dataset.date = newDate;
+        const dateObj = new Date(newDate);
+        const dateStr = dateObj.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' });
+        dateSpan.textContent = dateStr;
+      } else {
+        dateSpan.textContent = originalText;
+      }
+      dateSpan.classList.remove('editing');
+    };
+
+    // Enterキーまたはフォーカス外で保存
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        saveDate();
+      } else if (e.key === 'Escape') {
+        dateSpan.textContent = originalText;
+        dateSpan.classList.remove('editing');
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      saveDate();
+    });
+  }
+
+  /**
+   * 静的コンテキストの折りたたみを切り替え
+   */
+  function handleToggleStaticContext() {
+    if (!state.ui.staticContextContent) return;
+
+    state.ui.staticContextContent.classList.toggle('collapsed');
+    const toggleIcon = state.ui.staticContextToggle?.querySelector('.toggle-icon');
+    if (toggleIcon) {
+      toggleIcon.classList.toggle('collapsed');
+    }
+  }
+
+  /**
+   * 指定したコンテキストの後に週次コンテキストを追加
+   */
+  function handleAddWeeklyContextAfter(afterContextId) {
+    const newContext = {
+      id: `ctx_${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      content: '',
+      status: 'empty',
+      createdAt: new Date().toISOString()
+    };
+
+    // 現在のコンテキストを取得
+    const currentContexts = getAllWeeklyContextsFromUI();
+
+    // 指定したIDの後に挿入
+    const insertIndex = currentContexts.findIndex(ctx => ctx.id === afterContextId);
+    if (insertIndex !== -1) {
+      currentContexts.splice(insertIndex + 1, 0, newContext);
+    } else {
+      currentContexts.push(newContext);
+    }
+
+    // 再レンダリング
+    renderWeeklyContexts(currentContexts);
+  }
+
+  /**
+   * 週次コンテキストを削除
+   */
+  function handleRemoveWeeklyContext(contextId) {
+    const currentContexts = getAllWeeklyContextsFromUI();
+    const filtered = currentContexts.filter(ctx => ctx.id !== contextId);
+    renderWeeklyContexts(filtered);
+  }
+
+  /**
+   * UIから全ての週次コンテキストを取得
+   */
+  function getAllWeeklyContextsFromUI() {
+    if (!state.ui.weeklyContextsContainer) return [];
+
+    const contexts = [];
+    const weeklyInputs = state.ui.weeklyContextsContainer.querySelectorAll('.weekly-input');
+
+    weeklyInputs.forEach(input => {
+      const id = input.dataset.contextId;
+      const textarea = input.querySelector('.weekly-textarea');
+      const content = textarea?.value || '';
+      const dateSpan = input.querySelector('.weekly-input-date');
+      const date = dateSpan?.dataset.date || new Date().toISOString().split('T')[0];
+
+      contexts.push({
+        id: id,
+        date: date,
+        content: content,
+        status: content ? 'filled' : 'empty',
+        createdAt: new Date().toISOString()
+      });
+    });
+
+    return contexts;
+  }
+
+  /**
+   * コンテキストを保存
+   */
+  async function handleSaveContext() {
+    try {
+      if (!state.currentProjectId) {
+        console.warn('[Gemini Slides] No current project ID');
+        return;
+      }
+
+      // 現在のプロジェクトデータを取得
+      const projectData = await loadProject(state.currentProjectId);
+      if (!projectData) {
+        console.error('[Gemini Slides] Project data not found');
+        return;
+      }
+
+      // 静的コンテキストを更新
+      projectData.staticContext = {
+        purpose: state.ui.contextPurpose?.value || '',
+        audience: state.ui.contextAudience?.value || ''
+      };
+
+      // 週次コンテキストを更新
+      projectData.externalContexts = getAllWeeklyContextsFromUI();
+
+      // 保存
+      const success = await saveProject(state.currentProjectId, projectData);
+
+      if (success) {
+        console.log('[Gemini Slides] Context saved successfully');
+        // 成功メッセージを表示（レビュータブのステータスエリアを使用）
+        const currentTab = shadowRoot.querySelector('.tab-button.active')?.getAttribute('data-tab');
+        if (currentTab === 'context') {
+          // コンテキストタブでは、プロジェクト名の背景色を一時的に変更
+          if (state.ui.projectName) {
+            const originalBg = state.ui.projectName.style.background;
+            state.ui.projectName.style.background = 'rgba(16, 185, 129, 0.2)';
+            state.ui.projectName.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+            setTimeout(() => {
+              state.ui.projectName.style.background = originalBg;
+              state.ui.projectName.style.borderColor = 'rgba(138,180,248,0.3)';
+            }, 1500);
+          }
+        }
+      } else {
+        console.error('[Gemini Slides] Failed to save context');
+      }
+    } catch (error) {
+      console.error('[Gemini Slides] Error saving context:', error);
+    }
   }
 })();
