@@ -104,6 +104,9 @@
     // Phase 2: Load project data
     await loadCurrentProject();
 
+    // Phase 4: Update context indicator
+    await updateContextIndicator();
+
     // Try to restore last selected prompt for convenience
     const stored = await chrome.storage.sync.get("geminiLastPromptId");
     if (stored?.geminiLastPromptId) {
@@ -545,6 +548,26 @@
         .remove-weekly-button:hover {
           color: #d93025;
         }
+        .context-indicator {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: rgba(138, 180, 248, 0.08);
+          border: 1px solid rgba(138, 180, 248, 0.2);
+          border-radius: 6px;
+          margin-bottom: 12px;
+          font-size: 12px;
+        }
+        .context-indicator .indicator-icon {
+          font-size: 16px;
+        }
+        .context-indicator .indicator-text {
+          color: #9aa0a6;
+        }
+        .context-indicator.active .indicator-text {
+          color: #8ab4f8;
+        }
       </style>
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
@@ -567,6 +590,10 @@
         <main>
           <!-- レビュータブ -->
           <div class=\"tab-content active\" data-tab-content=\"review\">
+            <div class=\"context-indicator\" id=\"context-indicator\">
+              <span class=\"indicator-icon\">📋</span>
+              <span class=\"indicator-text\">Context: None</span>
+            </div>
             <div class=\"field\">
               <label for=\"gemini-prompt-select\">Prompt preset</label>
               <select id=\"gemini-prompt-select\"></select>
@@ -839,11 +866,21 @@
       setStatusWithSpinner("Analyzing with Gemini…\n\n", "streaming");
       state.latestResult = { text: "" };
 
-      const promptText = state.ui.promptTextarea.value.trim();
+      // Phase 4: コンテキスト統合
+      const contextPrompt = await buildContextPrompt();
+
+      // ユーザーが選択したプロンプトとコンテキストを結合
+      const userPrompt = state.ui.promptTextarea.value.trim();
+      const fullPrompt = contextPrompt
+        ? `${contextPrompt}[レビュー依頼]\n${userPrompt}\n\n以下のスライドを、上記のコンテキストを踏まえてレビューしてください。`
+        : userPrompt;
+
+      console.log('[Gemini Slides] Full prompt with context:', fullPrompt);
+
       const response = await chrome.runtime.sendMessage({
         type: "GEMINI_RUN_CHECK",
         payload: {
-          prompt: promptText,
+          prompt: fullPrompt,  // コンテキスト統合済みプロンプト
           presentationSummary
         }
       });
@@ -982,11 +1019,21 @@
       // Step 3: Send PDF to Gemini for holistic analysis
       setStatusWithSpinner(`全体のストーリーを分析中...\n\n`, "streaming");
 
-      const promptText = state.ui.promptTextarea.value.trim();
+      // Phase 4: コンテキスト統合
+      const contextPrompt = await buildContextPrompt();
+
+      // ユーザーが選択したプロンプトとコンテキストを結合
+      const userPrompt = state.ui.promptTextarea.value.trim();
+      const fullPrompt = contextPrompt
+        ? `${contextPrompt}[レビュー依頼]\n${userPrompt}\n\n以下の${allSlides.length}枚のスライドを含むプレゼンテーションを、上記のコンテキストを踏まえてレビューしてください。`
+        : userPrompt;
+
+      console.log('[Gemini Slides] Full prompt with context (PDF):', fullPrompt);
+
       const response = await chrome.runtime.sendMessage({
         type: "GEMINI_RUN_CHECK_PDF",
         payload: {
-          prompt: promptText,
+          prompt: fullPrompt,  // コンテキスト統合済みプロンプト
           pdfData: pdfDataUrl,
           slideCount: allSlides.length,
           capturedAt: Date.now()
@@ -2075,6 +2122,9 @@
       // UI を更新
       updateProjectUI(projectData);
 
+      // Phase 4: コンテキストインジケーター更新
+      await updateContextIndicator();
+
       console.log('[Gemini Slides] Switched to project:', selectedProjectId);
     } catch (error) {
       console.error('[Gemini Slides] Failed to switch project:', error);
@@ -2117,6 +2167,9 @@
       // UI を更新
       await updateProjectSelector();
       updateProjectUI(newProject);
+
+      // Phase 4: コンテキストインジケーター更新
+      await updateContextIndicator();
 
       console.log('[Gemini Slides] Created new project:', projectId);
     } catch (error) {
@@ -2450,11 +2503,99 @@
             state.ui.projectSelect.style.borderColor = originalBorder;
           }, 1500);
         }
+
+        // Phase 4: コンテキストインジケーター更新
+        await updateContextIndicator();
       } else {
         console.error('[Gemini Slides] Failed to save context');
       }
     } catch (error) {
       console.error('[Gemini Slides] Error saving context:', error);
+    }
+  }
+
+  // ========================================
+  // Phase 4: レビュー統合
+  // ========================================
+
+  /**
+   * プロジェクトのコンテキスト情報を統合し、プロンプト用のテキストを生成
+   * @returns {Promise<string>} - 統合されたコンテキストプロンプト
+   */
+  async function buildContextPrompt() {
+    try {
+      const presentationId = extractPresentationId(window.location.href);
+      if (!presentationId) {
+        return ''; // コンテキストなし
+      }
+
+      const projectId = await getProjectIdByUrl(presentationId);
+      if (!projectId) {
+        return ''; // プロジェクト未設定
+      }
+
+      const project = await loadProject(projectId);
+      if (!project) {
+        return '';
+      }
+
+      let contextPrompt = '';
+
+      // 1. プロジェクトコンテキスト（静的）
+      if (project.staticContext.purpose || project.staticContext.audience) {
+        contextPrompt += '[プロジェクトコンテキスト]\n';
+
+        if (project.staticContext.purpose) {
+          contextPrompt += `目的: ${project.staticContext.purpose}\n`;
+        }
+
+        if (project.staticContext.audience) {
+          contextPrompt += `対象者: ${project.staticContext.audience}\n`;
+        }
+
+        contextPrompt += '\n';
+      }
+
+      // 2. 外部コンテキスト（動的、日付の新しい順）
+      const filledContexts = project.externalContexts
+        .filter(c => c.status === 'filled' && c.content.trim())
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      if (filledContexts.length > 0) {
+        filledContexts.forEach(context => {
+          contextPrompt += `[外部コンテキスト - ${context.date}]\n`;
+          contextPrompt += `${context.content}\n\n`;
+        });
+      }
+
+      return contextPrompt;
+    } catch (error) {
+      console.error('[Context Builder] Failed to build context prompt:', error);
+      return '';
+    }
+  }
+
+  /**
+   * コンテキストインジケーターを更新
+   */
+  async function updateContextIndicator() {
+    const indicator = shadowRoot?.querySelector('#context-indicator');
+    if (!indicator) return;
+
+    const contextPrompt = await buildContextPrompt();
+
+    if (contextPrompt) {
+      indicator.classList.add('active');
+      const textElement = indicator.querySelector('.indicator-text');
+      if (textElement) {
+        textElement.textContent = 'Context: Active';
+      }
+    } else {
+      indicator.classList.remove('active');
+      const textElement = indicator.querySelector('.indicator-text');
+      if (textElement) {
+        textElement.textContent = 'Context: None';
+      }
     }
   }
 })();
