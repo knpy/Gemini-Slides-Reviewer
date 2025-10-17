@@ -30,7 +30,8 @@
     weeklyInputDay: 1,  // デフォルト: 月曜日
     staticContext: {
       purpose: '',
-      audience: ''
+      audience: '',
+      kickoffUrl: ''  // Phase 6: キックオフURL
     },
     externalContexts: []
   };
@@ -105,6 +106,10 @@
     // Project delete button
     const deleteProjectButton = shadowRoot.querySelector('#delete-project-button');
     deleteProjectButton?.addEventListener("click", handleDeleteProject);
+
+    // Phase 6: Extract from kickoff URL button
+    const extractFromKickoffButton = shadowRoot.querySelector('#extract-from-kickoff-button');
+    extractFromKickoffButton?.addEventListener("click", handleExtractFromKickoff);
 
     // Phase 2: Load project data
     await loadCurrentProject();
@@ -719,6 +724,121 @@
           cursor: pointer;
           padding: 0;
           width: 24px;
+        }
+        /* Phase 6: プロジェクト作成ダイアログ */
+        .create-project-dialog .dialog-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 2147483646;
+        }
+        .create-project-dialog .dialog-content {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: #2d2e30;
+          border: 1px solid #5f6368;
+          border-radius: 12px;
+          padding: 24px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+          min-width: 500px;
+          max-width: 600px;
+          z-index: 2147483647;
+        }
+        .create-project-dialog .dialog-title {
+          font-size: 18px;
+          font-weight: 600;
+          color: #e8eaed;
+          margin-bottom: 20px;
+        }
+        .create-project-dialog .form-group {
+          margin-bottom: 16px;
+        }
+        .create-project-dialog .form-label {
+          display: block;
+          font-size: 13px;
+          color: #9aa0a6;
+          margin-bottom: 6px;
+        }
+        .create-project-dialog .form-input {
+          width: 100%;
+          background: #1e1f20;
+          border: 1px solid #5f6368;
+          border-radius: 6px;
+          color: #e8eaed;
+          padding: 10px 12px;
+          font-size: 14px;
+          box-sizing: border-box;
+        }
+        .create-project-dialog .form-input:focus {
+          outline: none;
+          border-color: #8ab4f8;
+        }
+        .create-project-dialog .form-hint {
+          font-size: 11px;
+          color: #9aa0a6;
+          margin-top: 4px;
+        }
+        .extract-button {
+          background: #1a73e8;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          padding: 8px 16px;
+          font-size: 13px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 8px;
+        }
+        .extract-button:hover {
+          background: #1557b0;
+        }
+        .extract-button:disabled {
+          background: #3c4043;
+          color: #5f6368;
+          cursor: not-allowed;
+        }
+        .loading-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.8);
+          z-index: 2147483648;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .loading-content {
+          background: #2d2e30;
+          border: 1px solid #5f6368;
+          border-radius: 12px;
+          padding: 32px;
+          text-align: center;
+          min-width: 300px;
+        }
+        .loading-spinner {
+          width: 48px;
+          height: 48px;
+          border: 4px solid #3c4043;
+          border-top-color: #8ab4f8;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 16px;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .loading-text {
+          color: #e8eaed;
+          font-size: 14px;
           height: 24px;
         }
         .reminder-dismiss:hover {
@@ -805,6 +925,9 @@
                   <label for=\"gemini-context-audience\">Audience</label>
                   <textarea id=\"gemini-context-audience\" placeholder=\"想定される聴衆を入力してください\"></textarea>
                 </div>
+                <button class=\"extract-button\" id=\"extract-from-kickoff-button\" style=\"width: 100%;\">
+                  🔗 キックオフURLから取得
+                </button>
               </div>
             </div>
 
@@ -2358,50 +2481,125 @@
   }
 
   /**
-   * 新規プロジェクトを作成
+   * 新規プロジェクトを作成（Phase 6: ダイアログベース）
    */
   async function createNewProject() {
-    const projectName = prompt('新しいプロジェクト名を入力してください:', getPresentationTitle() || '無題のプロジェクト');
+    return new Promise((resolve) => {
+      // ダイアログを作成
+      const dialogHTML = `
+        <div class="create-project-dialog">
+          <div class="dialog-overlay"></div>
+          <div class="dialog-content">
+            <div class="dialog-title">新規プロジェクト作成</div>
 
-    if (!projectName) {
-      // キャンセルされた場合、ドロップダウンを元に戻す
-      if (state.currentProjectId && state.ui.projectSelect) {
-        state.ui.projectSelect.value = state.currentProjectId;
-      }
-      return;
-    }
+            <div class="form-group">
+              <label class="form-label" for="project-name-input">プロジェクト名 *</label>
+              <input
+                type="text"
+                id="project-name-input"
+                class="form-input"
+                placeholder="例: Q2 営業報告会"
+                value="${getPresentationTitle() || ''}"
+              />
+            </div>
 
-    try {
-      const projectId = generateProjectId();
-      const newProject = {
-        ...clone(DEFAULT_PROJECT_STRUCTURE),
-        projectName: projectName.trim(),
-        createdAt: new Date().toISOString()
+            <div class="form-group">
+              <label class="form-label" for="kickoff-url-input">キックオフURL (任意)</label>
+              <input
+                type="url"
+                id="kickoff-url-input"
+                class="form-input"
+                placeholder="https://docs.google.com/presentation/d/..."
+              />
+              <div class="form-hint">キックオフのGoogle SlidesのURLを入力すると、自動的にコンテキストを抽出します</div>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="button secondary" id="dialog-cancel">キャンセル</button>
+              <button class="button primary" id="dialog-create">作成</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const dialogContainer = document.createElement('div');
+      dialogContainer.innerHTML = dialogHTML;
+      shadowRoot.appendChild(dialogContainer.firstElementChild);
+
+      const dialog = shadowRoot.querySelector('.create-project-dialog');
+      const overlay = dialog.querySelector('.dialog-overlay');
+      const cancelButton = dialog.querySelector('#dialog-cancel');
+      const createButton = dialog.querySelector('#dialog-create');
+      const nameInput = dialog.querySelector('#project-name-input');
+      const kickoffUrlInput = dialog.querySelector('#kickoff-url-input');
+
+      // キャンセル処理
+      const handleCancel = () => {
+        dialog.remove();
+        // ドロップダウンを元に戻す
+        if (state.currentProjectId && state.ui.projectSelect) {
+          state.ui.projectSelect.value = state.currentProjectId;
+        }
+        resolve(null);
       };
 
-      await saveProject(projectId, newProject);
+      overlay.addEventListener('click', handleCancel);
+      cancelButton.addEventListener('click', handleCancel);
 
-      // 現在のURLに紐付け
-      const presentationId = extractPresentationId();
-      if (presentationId) {
-        await saveUrlProjectMapping(presentationId, projectId);
-      }
+      // 作成処理
+      createButton.addEventListener('click', async () => {
+        const projectName = nameInput.value.trim();
+        const kickoffUrl = kickoffUrlInput.value.trim();
 
-      // state を更新
-      state.currentProjectId = projectId;
+        if (!projectName) {
+          alert('プロジェクト名を入力してください');
+          return;
+        }
 
-      // UI を更新
-      await updateProjectSelector();
-      updateProjectUI(newProject);
+        dialog.remove();
 
-      // Phase 4: コンテキストインジケーター更新
-      await updateContextIndicator();
+        try {
+          const projectId = generateProjectId();
+          const newProject = {
+            ...clone(DEFAULT_PROJECT_STRUCTURE),
+            projectName: projectName,
+            createdAt: new Date().toISOString()
+          };
 
-      console.log('[Gemini Slides] Created new project:', projectId);
-    } catch (error) {
-      console.error('[Gemini Slides] Failed to create new project:', error);
-      alert('プロジェクトの作成に失敗しました: ' + error.message);
-    }
+          // Phase 6: キックオフURLがある場合は保存（UIのみなので実際の抽出は後のフェーズ）
+          if (kickoffUrl) {
+            newProject.staticContext.kickoffUrl = kickoffUrl;
+            // TODO: Phase 6-2以降で実装する自動抽出機能
+            console.log('[Phase 6] Kickoff URL will be processed:', kickoffUrl);
+          }
+
+          await saveProject(projectId, newProject);
+
+          // 現在のURLに紐付け
+          const presentationId = extractPresentationId();
+          if (presentationId) {
+            await saveUrlProjectMapping(presentationId, projectId);
+          }
+
+          // state を更新
+          state.currentProjectId = projectId;
+
+          // UI を更新
+          await updateProjectSelector();
+          updateProjectUI(newProject);
+
+          // Phase 4: コンテキストインジケーター更新
+          await updateContextIndicator();
+
+          console.log('[Gemini Slides] Created new project:', projectId);
+          resolve(projectId);
+        } catch (error) {
+          console.error('[Gemini Slides] Failed to create new project:', error);
+          alert('プロジェクトの作成に失敗しました: ' + error.message);
+          resolve(null);
+        }
+      });
+    });
   }
 
   /**
@@ -2776,6 +2974,120 @@
       }
     } catch (error) {
       console.error('[Gemini Slides] Error saving context:', error);
+    }
+  }
+
+  /**
+   * Phase 6: キックオフURLからコンテキストを抽出（UIのみ実装）
+   */
+  async function handleExtractFromKickoff() {
+    // プロジェクトが選択されているか確認
+    if (!state.currentProjectId) {
+      alert('プロジェクトを選択してください');
+      return;
+    }
+
+    // キックオフURL入力ダイアログを表示
+    return new Promise((resolve) => {
+      const dialogHTML = `
+        <div class="create-project-dialog">
+          <div class="dialog-overlay"></div>
+          <div class="dialog-content">
+            <div class="dialog-title">キックオフURLから取得</div>
+
+            <div class="form-group">
+              <label class="form-label" for="kickoff-url-extract-input">キックオフURL</label>
+              <input
+                type="url"
+                id="kickoff-url-extract-input"
+                class="form-input"
+                placeholder="https://docs.google.com/presentation/d/..."
+              />
+              <div class="form-hint">Google SlidesのURLを入力してください。コンテキストを自動的に抽出し、既存の情報に追記します。</div>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="button secondary" id="dialog-cancel-extract">キャンセル</button>
+              <button class="button primary" id="dialog-extract">抽出</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const dialogContainer = document.createElement('div');
+      dialogContainer.innerHTML = dialogHTML;
+      shadowRoot.appendChild(dialogContainer.firstElementChild);
+
+      const dialog = shadowRoot.querySelector('.create-project-dialog');
+      const overlay = dialog.querySelector('.dialog-overlay');
+      const cancelButton = dialog.querySelector('#dialog-cancel-extract');
+      const extractButton = dialog.querySelector('#dialog-extract');
+      const urlInput = dialog.querySelector('#kickoff-url-extract-input');
+
+      // キャンセル処理
+      const handleCancel = () => {
+        dialog.remove();
+        resolve(null);
+      };
+
+      overlay.addEventListener('click', handleCancel);
+      cancelButton.addEventListener('click', handleCancel);
+
+      // 抽出処理
+      extractButton.addEventListener('click', async () => {
+        const kickoffUrl = urlInput.value.trim();
+
+        if (!kickoffUrl) {
+          alert('URLを入力してください');
+          return;
+        }
+
+        // URLバリデーション（基本的なチェック）
+        if (!kickoffUrl.startsWith('https://docs.google.com/presentation/')) {
+          alert('Google SlidesのURLを入力してください');
+          return;
+        }
+
+        dialog.remove();
+
+        // TODO: Phase 6-2以降で実装
+        // ここでは仮の処理として、ローディングダイアログを表示してすぐに消す
+        showLoadingDialog('キックオフURLから情報を抽出中...');
+
+        setTimeout(() => {
+          hideLoadingDialog();
+          alert('Phase 6-2以降で実装される機能です。\n現在はUI確認用のダミー動作です。');
+          resolve(null);
+        }, 1500);
+      });
+    });
+  }
+
+  /**
+   * Phase 6: ローディングダイアログを表示
+   */
+  function showLoadingDialog(message = 'Loading...') {
+    const loadingHTML = `
+      <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">${message}</div>
+        </div>
+      </div>
+    `;
+
+    const loadingContainer = document.createElement('div');
+    loadingContainer.innerHTML = loadingHTML;
+    shadowRoot.appendChild(loadingContainer.firstElementChild);
+  }
+
+  /**
+   * Phase 6: ローディングダイアログを非表示
+   */
+  function hideLoadingDialog() {
+    const loadingOverlay = shadowRoot.querySelector('#loading-overlay');
+    if (loadingOverlay) {
+      loadingOverlay.remove();
     }
   }
 
