@@ -2437,7 +2437,12 @@
         // UIをクリア
         if (state.ui.contextPurpose) state.ui.contextPurpose.value = '';
         if (state.ui.contextAudience) state.ui.contextAudience.value = '';
-        renderExternalContexts([]);
+
+        // 週次コンテキストコンテナをクリア
+        const weeklyContainer = shadowRoot.querySelector('#weekly-contexts-container');
+        if (weeklyContainer) {
+          weeklyContainer.innerHTML = '';
+        }
 
         // プロジェクトセレクターを更新
         await updateProjectSelector();
