@@ -102,6 +102,10 @@
     // Phase 2: Project selector
     state.ui.projectSelect?.addEventListener("change", handleProjectSwitch);
 
+    // Project delete button
+    const deleteProjectButton = shadowRoot.querySelector('#delete-project-button');
+    deleteProjectButton?.addEventListener("click", handleDeleteProject);
+
     // Phase 2: Load project data
     await loadCurrentProject();
 
@@ -241,6 +245,24 @@
         .project-selector select option {
           background: #2d2e30;
           color: #e8eaed;
+        }
+        .delete-project-button {
+          background: transparent;
+          border: 1px solid rgba(255, 68, 68, 0.3);
+          color: #ff4444;
+          padding: 6px 10px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 16px;
+          transition: all 0.2s;
+          line-height: 1;
+        }
+        .delete-project-button:hover {
+          background: rgba(255, 68, 68, 0.1);
+          border-color: rgba(255, 68, 68, 0.5);
+        }
+        .delete-project-button:active {
+          background: rgba(255, 68, 68, 0.2);
         }
         .gemini-panel main {
           padding: 16px;
@@ -727,6 +749,7 @@
             <select id=\"gemini-project-select\">
               <option value=\"\">Loading...</option>
             </select>
+            <button class=\"delete-project-button\" id=\"delete-project-button\" title=\"Delete current project\">🗑️</button>
           </div>
         </header>
         <nav class=\"tab-nav\">
@@ -2000,6 +2023,12 @@
     const n1 = normalize(title1);
     const n2 = normalize(title2);
 
+    // デフォルトタイトル（無題のプレゼンテーション、Untitled presentation等）は類似判定しない
+    const defaultTitles = ['無題のプレゼンテーション', 'untitledpresentation', '無題のプロジェクト'];
+    if (defaultTitles.includes(n1) || defaultTitles.includes(n2)) {
+      return false;
+    }
+
     // 完全一致
     if (n1 === n2) return true;
 
@@ -2092,6 +2121,45 @@
     } catch (error) {
       console.error('[Gemini Slides] Failed to load project:', error);
       return null;
+    }
+  }
+
+  /**
+   * プロジェクトを削除
+   * @param {string} projectId
+   * @returns {boolean} 成功したかどうか
+   */
+  async function deleteProject(projectId) {
+    try {
+      // プロジェクトデータを削除
+      const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.PROJECTS);
+      const projects = stored[STORAGE_KEYS_PROJECT.PROJECTS] || {};
+      delete projects[projectId];
+
+      await chrome.storage.local.set({
+        [STORAGE_KEYS_PROJECT.PROJECTS]: projects
+      });
+
+      // URL→プロジェクトIDマッピングも削除
+      const mappingStored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.URL_PROJECT_MAP);
+      const mapping = mappingStored[STORAGE_KEYS_PROJECT.URL_PROJECT_MAP] || {};
+
+      // このプロジェクトIDを参照しているURLをすべて削除
+      for (const [url, pid] of Object.entries(mapping)) {
+        if (pid === projectId) {
+          delete mapping[url];
+        }
+      }
+
+      await chrome.storage.local.set({
+        [STORAGE_KEYS_PROJECT.URL_PROJECT_MAP]: mapping
+      });
+
+      console.log('[Gemini Slides] Project deleted:', projectId);
+      return true;
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to delete project:', error);
+      return false;
     }
   }
 
@@ -2342,6 +2410,52 @@
   }
 
   /**
+   * プロジェクトを削除
+   */
+  async function handleDeleteProject() {
+    if (!state.currentProjectId) {
+      alert('削除するプロジェクトを選択してください');
+      return;
+    }
+
+    const project = await loadProject(state.currentProjectId);
+    const projectName = project?.projectName || 'このプロジェクト';
+
+    if (!confirm(`「${projectName}」を削除してもよろしいですか？\n\nこの操作は取り消せません。`)) {
+      return;
+    }
+
+    try {
+      const success = await deleteProject(state.currentProjectId);
+
+      if (success) {
+        console.log('[Gemini Slides] Project deleted successfully');
+
+        // stateをクリア
+        state.currentProjectId = null;
+
+        // UIをクリア
+        if (state.ui.contextPurpose) state.ui.contextPurpose.value = '';
+        if (state.ui.contextAudience) state.ui.contextAudience.value = '';
+        renderExternalContexts([]);
+
+        // プロジェクトセレクターを更新
+        await updateProjectSelector();
+
+        // コンテキストインジケーターを更新
+        await updateContextIndicator();
+
+        alert('プロジェクトを削除しました');
+      } else {
+        alert('プロジェクトの削除に失敗しました');
+      }
+    } catch (error) {
+      console.error('[Gemini Slides] Failed to delete project:', error);
+      alert('プロジェクトの削除に失敗しました: ' + error.message);
+    }
+  }
+
+  /**
    * 現在のプロジェクトを読み込む
    */
   async function loadCurrentProject() {
@@ -2354,28 +2468,13 @@
       }
 
       // URLからプロジェクトIDを取得
-      let projectId = await getProjectIdByUrl(presentationId);
+      const projectId = await getProjectIdByUrl(presentationId);
 
-      // プロジェクトIDが見つからない場合、新規作成
+      // プロジェクトIDが見つからない場合は何もしない
+      // detectProjectOnLoad()が類似プロジェクトの確認を行う
       if (!projectId) {
-        projectId = generateProjectId();
-        const title = getPresentationTitle() || '無題のプレゼンテーション';
-
-        const newProject = {
-          ...clone(DEFAULT_PROJECT_STRUCTURE),
-          projectName: title,
-          createdAt: new Date().toISOString()
-        };
-
-        await saveProject(projectId, newProject);
-        await saveUrlProjectMapping(presentationId, projectId);
-
-        console.log('[Gemini Slides] Created new project:', projectId);
-        state.currentProjectId = projectId;
-
-        // UIを更新
+        console.log('[Gemini Slides] No project mapping found for this URL');
         await updateProjectSelector();
-        updateProjectUI(newProject);
         return;
       }
 
