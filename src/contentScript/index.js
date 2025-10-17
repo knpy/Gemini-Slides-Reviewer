@@ -779,11 +779,6 @@
               <button class=\"button\" id=\"gemini-run-button\">現在のスライドを分析</button>
               <button class=\"button\" id=\"gemini-run-all-button\">全スライドを分析</button>
             </div>
-            <div class=\"button-row\">
-              <button class=\"button secondary\" id=\"gemini-save-prompt\">プリセット保存</button>
-              <button class=\"button secondary\" id=\"gemini-add-prompt\">複製して新規作成</button>
-              <button class=\"button danger\" id=\"gemini-reset-prompt\">デフォルトに戻す</button>
-            </div>
             <section class=\"field\">
               <label>Screenshot</label>
               <div id=\"gemini-screenshot-preview\" class=\"screenshot-preview\"></div>
