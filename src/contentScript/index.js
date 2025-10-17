@@ -104,8 +104,14 @@
     // Phase 2: Load project data
     await loadCurrentProject();
 
+    // Phase 3: Project auto-detection
+    await detectProjectOnLoad();
+
     // Phase 4: Update context indicator
     await updateContextIndicator();
+
+    // Phase 3: Start periodic maintenance
+    startPeriodicMaintenance();
 
     // Try to restore last selected prompt for convenience
     const stored = await chrome.storage.sync.get("geminiLastPromptId");
@@ -567,6 +573,79 @@
         }
         .context-indicator.active .indicator-text {
           color: #8ab4f8;
+        }
+        /* Phase 3: プロジェクト紐付けダイアログ */
+        .project-linking-dialog .dialog-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          z-index: 2147483646;
+        }
+        .project-linking-dialog .dialog-content {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: #2d2e30;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 12px;
+          padding: 24px;
+          max-width: 500px;
+          width: 90%;
+          z-index: 2147483647;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .project-linking-dialog h2 {
+          margin: 0 0 16px 0;
+          font-size: 18px;
+          color: #e8eaed;
+        }
+        .project-linking-dialog p {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+          color: #9aa0a6;
+          line-height: 1.5;
+        }
+        .project-options {
+          margin: 20px 0;
+        }
+        .project-option {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          margin-bottom: 8px;
+          background: rgba(255,255,255,0.02);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .project-option:hover {
+          background: rgba(255,255,255,0.05);
+          border-color: rgba(138, 180, 248, 0.3);
+        }
+        .project-option input[type="radio"] {
+          margin: 0;
+          cursor: pointer;
+        }
+        .project-option span {
+          flex: 1;
+          font-size: 14px;
+          color: #e8eaed;
+        }
+        .project-option small {
+          font-size: 11px;
+          color: #9aa0a6;
+        }
+        .dialog-actions {
+          display: flex;
+          gap: 12px;
+          justify-content: flex-end;
+          margin-top: 24px;
         }
       </style>
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
@@ -2597,5 +2676,265 @@
         textElement.textContent = 'Context: None';
       }
     }
+  }
+
+  // ========================================
+  // Phase 3: インテリジェント機能
+  // ========================================
+
+  /**
+   * ページ読み込み時にプロジェクトを自動検出
+   * 新規URLの場合、タイトル類似度でプロジェクトを推測し、ユーザーに確認
+   */
+  async function detectProjectOnLoad() {
+    try {
+      const presentationId = extractPresentationId(window.location.href);
+      if (!presentationId) {
+        console.warn('[Project Detection] Cannot extract presentation ID');
+        return;
+      }
+
+      // 既にマッピングが存在するか確認
+      const existingProjectId = await getProjectIdByUrl(presentationId);
+      if (existingProjectId) {
+        console.log('[Project Detection] Existing project found:', existingProjectId);
+        return; // 既存プロジェクトがあれば何もしない
+      }
+
+      // 新規URL: タイトル類似度チェック
+      const currentTitle = getPresentationTitle();
+      if (!currentTitle) {
+        console.warn('[Project Detection] Cannot get presentation title');
+        return;
+      }
+
+      const allProjects = await getAllProjects();
+      const similarProjects = findSimilarProjects(currentTitle, allProjects);
+
+      if (similarProjects.length > 0) {
+        // 類似プロジェクトが見つかった場合、ユーザーに確認
+        await showProjectLinkingDialog(presentationId, currentTitle, similarProjects);
+      } else {
+        // 類似プロジェクトがない場合、何もしない（ユーザーが手動で作成）
+        console.log('[Project Detection] No similar projects found');
+      }
+    } catch (error) {
+      console.error('[Project Detection] Error during project detection:', error);
+    }
+  }
+
+  /**
+   * タイトルが類似しているプロジェクトを検索
+   * @param {string} title - 現在のプレゼンテーションタイトル
+   * @param {object} allProjects - すべてのプロジェクト
+   * @returns {Array} - 類似プロジェクトの配列 [{projectId, projectName, similarity}, ...]
+   */
+  function findSimilarProjects(title, allProjects) {
+    const similar = [];
+
+    for (const [projectId, project] of Object.entries(allProjects)) {
+      if (isSimilarTitle(title, project.projectName)) {
+        similar.push({
+          projectId,
+          projectName: project.projectName,
+          createdAt: project.createdAt
+        });
+      }
+    }
+
+    // 作成日時の新しい順にソート
+    similar.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return similar;
+  }
+
+  /**
+   * プロジェクト紐付け確認ダイアログを表示
+   * @param {string} presentationId - 現在のプレゼンテーションID
+   * @param {string} currentTitle - 現在のタイトル
+   * @param {Array} similarProjects - 類似プロジェクトのリスト
+   */
+  async function showProjectLinkingDialog(presentationId, currentTitle, similarProjects) {
+    // ダイアログ要素を作成
+    const dialog = document.createElement('div');
+    dialog.className = 'project-linking-dialog';
+    dialog.innerHTML = `
+      <div class="dialog-overlay"></div>
+      <div class="dialog-content">
+        <h2>Link to Existing Project?</h2>
+        <p>Found projects with similar names to "${currentTitle}".</p>
+        <p>Is this slide related to an existing project?</p>
+
+        <div class="project-options">
+          ${similarProjects.map(proj => `
+            <label class="project-option">
+              <input type="radio" name="project-choice" value="${proj.projectId}">
+              <span>${proj.projectName}</span>
+              <small>(Created: ${new Date(proj.createdAt).toLocaleDateString()})</small>
+            </label>
+          `).join('')}
+          <label class="project-option">
+            <input type="radio" name="project-choice" value="skip" checked>
+            <span>Skip (I'll create manually later)</span>
+          </label>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="button secondary" id="dialog-cancel">Cancel</button>
+          <button class="button" id="dialog-confirm">Confirm</button>
+        </div>
+      </div>
+    `;
+
+    shadowRoot.appendChild(dialog);
+
+    // ダイアログのイベントリスナー
+    return new Promise((resolve) => {
+      const confirmButton = dialog.querySelector('#dialog-confirm');
+      const cancelButton = dialog.querySelector('#dialog-cancel');
+
+      confirmButton.addEventListener('click', async () => {
+        const selectedOption = dialog.querySelector('input[name="project-choice"]:checked');
+        const selectedValue = selectedOption?.value;
+
+        if (selectedValue && selectedValue !== 'skip') {
+          // 既存プロジェクトに紐付け
+          await saveUrlProjectMapping(presentationId, selectedValue);
+          state.currentProjectId = selectedValue;
+          console.log(`[Project Detection] Linked to existing project: ${selectedValue}`);
+
+          // UIを更新
+          await updateProjectSelector();
+          const project = await loadProject(selectedValue);
+          if (project) {
+            updateProjectUI(project);
+            await updateContextIndicator();
+          }
+        }
+
+        // ダイアログを閉じる
+        dialog.remove();
+        resolve();
+      });
+
+      cancelButton.addEventListener('click', () => {
+        dialog.remove();
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * 週次入力欄を自動生成（必要に応じて）
+   * 設定された曜日になったら、新しい入力欄を追加
+   */
+  async function generateWeeklyContextIfNeeded() {
+    try {
+      if (!state.currentProjectId) {
+        return; // プロジェクトが設定されていない場合は何もしない
+      }
+
+      const project = await loadProject(state.currentProjectId);
+      if (!project) return;
+
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0=日曜, 1=月曜, ..., 6=土曜
+
+      // 設定された曜日と一致するか確認
+      if (dayOfWeek !== project.weeklyInputDay) {
+        return; // 今日は週次入力日ではない
+      }
+
+      // 今日の日付
+      const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+      // 既に今日の日付の入力欄が存在するか確認
+      const existingContext = project.externalContexts.find(c => c.date === todayStr);
+      if (existingContext) {
+        console.log('[Weekly Context] Today\'s context already exists');
+        return;
+      }
+
+      // 新しい週次入力欄を作成
+      const newContext = {
+        id: `ctx_${Date.now()}`,
+        date: todayStr,
+        content: '',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      project.externalContexts.push(newContext);
+      await saveProject(state.currentProjectId, project);
+
+      console.log('[Weekly Context] New weekly context created for', todayStr);
+
+      // UIが表示されていて、Contextタブが開いている場合は再描画
+      if (state.isPanelVisible && state.currentTab === 'context') {
+        renderExternalContexts(project.externalContexts);
+      }
+    } catch (error) {
+      console.error('[Weekly Context] Failed to generate weekly context:', error);
+    }
+  }
+
+  /**
+   * 3週間以上前のpending状態の入力欄を自動削除
+   */
+  async function cleanupOldPendingContexts() {
+    try {
+      if (!state.currentProjectId) {
+        return;
+      }
+
+      const project = await loadProject(state.currentProjectId);
+      if (!project || !project.externalContexts) return;
+
+      const threeWeeksAgo = new Date();
+      threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 21);
+
+      const originalCount = project.externalContexts.length;
+
+      // 3週間以上前のpending状態のコンテキストを削除
+      project.externalContexts = project.externalContexts.filter(context => {
+        if (context.status !== 'pending') {
+          return true; // filled状態のものは保持
+        }
+
+        const contextDate = new Date(context.createdAt || context.date);
+        return contextDate >= threeWeeksAgo; // 3週間以内のものは保持
+      });
+
+      const deletedCount = originalCount - project.externalContexts.length;
+
+      if (deletedCount > 0) {
+        await saveProject(state.currentProjectId, project);
+        console.log(`[Context Cleanup] Deleted ${deletedCount} old pending contexts`);
+
+        // UIが表示されていて、Contextタブが開いている場合は再描画
+        if (state.isPanelVisible && state.currentTab === 'context') {
+          renderExternalContexts(project.externalContexts);
+        }
+      }
+    } catch (error) {
+      console.error('[Context Cleanup] Failed to cleanup old contexts:', error);
+    }
+  }
+
+  /**
+   * 定期的なメンテナンス処理を開始
+   * - 週次入力欄の自動生成
+   * - 古い空欄の自動削除
+   */
+  function startPeriodicMaintenance() {
+    // 初回実行
+    generateWeeklyContextIfNeeded();
+    cleanupOldPendingContexts();
+
+    // 1日1回実行（24時間ごと）
+    setInterval(() => {
+      generateWeeklyContextIfNeeded();
+      cleanupOldPendingContexts();
+    }, 24 * 60 * 60 * 1000); // 24時間
   }
 })();
