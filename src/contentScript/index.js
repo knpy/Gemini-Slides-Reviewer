@@ -47,7 +47,8 @@
     latestResult: null,
     isCancelled: false,
     isRunningBulkCapture: false,
-    currentProjectId: null  // 現在のプロジェクトID
+    currentProjectId: null,  // 現在のプロジェクトID
+    currentTab: 'review'  // 現在のタブ
   };
 
   let shadowRoot;
@@ -112,6 +113,12 @@
 
     // Phase 3: Start periodic maintenance
     startPeriodicMaintenance();
+
+    // Phase 5: Initialize keyboard shortcuts
+    initializeKeyboardShortcuts();
+
+    // Phase 5: Show weekly input reminder
+    await showWeeklyInputReminder();
 
     // Try to restore last selected prompt for convenience
     const stored = await chrome.storage.sync.get("geminiLastPromptId");
@@ -647,6 +654,66 @@
           justify-content: flex-end;
           margin-top: 24px;
         }
+        /* Phase 5: リマインダー通知 */
+        .reminder-notification {
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          background: rgba(251, 188, 4, 0.15);
+          border-bottom: 1px solid rgba(251, 188, 4, 0.3);
+          padding: 12px;
+        }
+        .reminder-content {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+        }
+        .reminder-icon {
+          font-size: 16px;
+        }
+        .reminder-text {
+          flex: 1;
+          color: #fdd663;
+        }
+        .reminder-action {
+          background: #fbbc04;
+          color: #202124;
+          border: none;
+          border-radius: 4px;
+          padding: 4px 12px;
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .reminder-action:hover {
+          background: #f9ab00;
+        }
+        .reminder-dismiss {
+          background: transparent;
+          border: none;
+          color: #9aa0a6;
+          font-size: 18px;
+          cursor: pointer;
+          padding: 0;
+          width: 24px;
+          height: 24px;
+        }
+        .reminder-dismiss:hover {
+          color: #e8eaed;
+        }
+        /* Phase 5: ストレージ情報 */
+        .storage-info {
+          margin-top: 16px;
+          padding: 12px;
+          background: rgba(255,255,255,0.02);
+          border-radius: 6px;
+          text-align: center;
+        }
+        .storage-info small {
+          color: #9aa0a6;
+          font-size: 11px;
+        }
       </style>
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
@@ -730,6 +797,10 @@
 
             <div class=\"button-row\">
               <button class=\"button\" id=\"gemini-save-context\">コンテキストを保存</button>
+            </div>
+
+            <div class=\"storage-info\" id=\"storage-info\">
+              <small>Storage: Calculating...</small>
             </div>
           </div>
         </main>
@@ -1986,6 +2057,11 @@
       const stored = await chrome.storage.local.get(STORAGE_KEYS_PROJECT.PROJECTS);
       const projects = stored[STORAGE_KEYS_PROJECT.PROJECTS] || {};
 
+      // Phase 5: 外部コンテキストを圧縮
+      if (projectData.externalContexts) {
+        projectData.externalContexts = compressExternalContexts(projectData.externalContexts);
+      }
+
       projects[projectId] = {
         ...projectData,
         updatedAt: new Date().toISOString()
@@ -2104,6 +2180,14 @@
     if (targetContent) {
       targetContent.classList.add('active');
     }
+
+    // Phase 5: Contextタブに切り替えた時はストレージ情報を更新
+    if (tabName === 'context') {
+      updateStorageInfo();
+    }
+
+    // 現在のタブを記録
+    state.currentTab = tabName;
   }
 
   /**
@@ -2585,6 +2669,9 @@
 
         // Phase 4: コンテキストインジケーター更新
         await updateContextIndicator();
+
+        // Phase 5: ストレージ情報更新
+        await updateStorageInfo();
       } else {
         console.error('[Gemini Slides] Failed to save context');
       }
@@ -2936,5 +3023,234 @@
       generateWeeklyContextIfNeeded();
       cleanupOldPendingContexts();
     }, 24 * 60 * 60 * 1000); // 24時間
+  }
+
+  // ========================================
+  // Phase 5: 快適性向上
+  // ========================================
+
+  /**
+   * エラーハンドリングを統一
+   * @param {Error} error - エラーオブジェクト
+   * @param {string} context - エラーが発生したコンテキスト
+   */
+  function handleError(error, context = '') {
+    console.error(`[Gemini Slides] Error${context ? ` in ${context}` : ''}:`, error);
+
+    let userMessage = '';
+
+    if (error.message?.includes('Extension context invalidated')) {
+      userMessage = 'Extension was reloaded. Please refresh the page.';
+    } else if (error.message?.includes('API key')) {
+      userMessage = 'API key is not set. Please configure it in extension options.';
+    } else if (error.message?.includes('Network')) {
+      userMessage = 'Network error occurred. Please check your internet connection.';
+    } else if (error.message?.includes('quota')) {
+      userMessage = 'API quota exceeded. Please try again later.';
+    } else {
+      userMessage = `Error: ${error.message}`;
+    }
+
+    setStatus(userMessage, 'error');
+  }
+
+  /**
+   * デバウンス処理
+   * @param {Function} func - 実行する関数
+   * @param {number} wait - 待機時間（ミリ秒）
+   * @returns {Function} - デバウンスされた関数
+   */
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  /**
+   * キーボードショートカットを初期化
+   */
+  function initializeKeyboardShortcuts() {
+    document.addEventListener('keydown', (event) => {
+      // Ctrl+Shift+G または Cmd+Shift+G でパネルを開閉
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'G') {
+        event.preventDefault();
+        togglePanel();
+      }
+
+      // パネルが開いている場合
+      if (state.isPanelVisible) {
+        // Ctrl+Enter または Cmd+Enter でレビュー実行
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          if (state.ui.runButton && !state.ui.runButton.disabled) {
+            handleRunCheck();
+          }
+        }
+
+        // Ctrl+Shift+Enter または Cmd+Shift+Enter で全スライドレビュー
+        if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Enter') {
+          event.preventDefault();
+          if (state.ui.runAllButton && !state.ui.runAllButton.disabled) {
+            handleRunAllSlides();
+          }
+        }
+      }
+    });
+
+    console.log('[Gemini Slides] Keyboard shortcuts initialized');
+  }
+
+  /**
+   * 外部コンテキストを圧縮（古いfilled以外のデータを削除）
+   * @param {Array} contexts - 外部コンテキストの配列
+   * @returns {Array} - 圧縮されたコンテキスト配列
+   */
+  function compressExternalContexts(contexts) {
+    if (!contexts || !Array.isArray(contexts)) return [];
+
+    // filled状態のコンテキストのみ保持（最大20件）
+    const filled = contexts
+      .filter(c => c.status === 'filled')
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 20);
+
+    // pending状態のコンテキスト（3週間以内のもの）
+    const threeWeeksAgo = new Date();
+    threeWeeksAgo.setDate(threeWeeksAgo.getDate() - 21);
+
+    const pending = contexts.filter(c => {
+      if (c.status !== 'pending') return false;
+      const contextDate = new Date(c.createdAt || c.date);
+      return contextDate >= threeWeeksAgo;
+    });
+
+    return [...filled, ...pending];
+  }
+
+  /**
+   * デバッグモードを有効化
+   * コンソールに詳細ログを出力
+   */
+  function enableDebugMode() {
+    window.__geminiSlidesDebug = true;
+    console.log('[Gemini Slides] Debug mode enabled');
+
+    // デバッグ用のグローバル関数を追加
+    window.geminiDebug = {
+      getState: () => state,
+      getProject: async () => {
+        if (!state.currentProjectId) return null;
+        return await loadProject(state.currentProjectId);
+      },
+      getAllProjects: async () => await getAllProjects(),
+      buildContext: async () => await buildContextPrompt(),
+      clearStorage: async () => {
+        await chrome.storage.local.clear();
+        console.log('Storage cleared');
+      }
+    };
+
+    console.log('Debug functions available at window.geminiDebug');
+  }
+
+  /**
+   * 週次入力が未入力の場合、リマインダーを表示
+   */
+  async function showWeeklyInputReminder() {
+    try {
+      if (!state.currentProjectId) return;
+
+      const project = await loadProject(state.currentProjectId);
+      if (!project || !project.externalContexts) return;
+
+      // 未入力（pending）のコンテキストを確認
+      const pendingContexts = project.externalContexts.filter(c => c.status === 'pending');
+
+      if (pendingContexts.length === 0) {
+        return; // リマインダー不要
+      }
+
+      // 最新の未入力コンテキストを確認
+      const latestPending = pendingContexts.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+      const daysSinceCreated = Math.floor((Date.now() - new Date(latestPending.createdAt)) / (1000 * 60 * 60 * 24));
+
+      // 3日以上経過している場合、リマインダーを表示
+      if (daysSinceCreated >= 3) {
+        showReminderNotification(latestPending.date);
+      }
+    } catch (error) {
+      console.error('[Reminder] Failed to check reminder:', error);
+    }
+  }
+
+  /**
+   * リマインダー通知を表示
+   * @param {string} date - 未入力の日付
+   */
+  function showReminderNotification(date) {
+    const existing = shadowRoot.querySelector('#reminder-notification');
+    if (existing) return; // 既に表示されている
+
+    // リマインダー要素を作成
+    const element = document.createElement('div');
+    element.id = 'reminder-notification';
+    element.className = 'reminder-notification';
+    element.innerHTML = `
+      <div class="reminder-content">
+        <span class="reminder-icon">⏰</span>
+        <span class="reminder-text">Context for ${date} is still empty</span>
+        <button class="reminder-action">Fill Now</button>
+        <button class="reminder-dismiss">×</button>
+      </div>
+    `;
+
+    const panel = shadowRoot.querySelector('.gemini-panel');
+    if (panel) {
+      panel.insertBefore(element, panel.firstChild);
+    }
+
+    // イベントリスナー
+    element.querySelector('.reminder-action')?.addEventListener('click', () => {
+      switchTab('context');
+      element.remove();
+    });
+
+    element.querySelector('.reminder-dismiss')?.addEventListener('click', () => {
+      element.remove();
+    });
+  }
+
+  /**
+   * ストレージ使用状況を更新
+   */
+  async function updateStorageInfo() {
+    const storageInfo = shadowRoot.querySelector('#storage-info');
+    if (!storageInfo) return;
+
+    try {
+      const allData = await chrome.storage.local.get(null);
+      const dataString = JSON.stringify(allData);
+      const bytesUsed = new Blob([dataString]).size;
+      const mbUsed = (bytesUsed / (1024 * 1024)).toFixed(2);
+      const percentUsed = ((bytesUsed / (10 * 1024 * 1024)) * 100).toFixed(1);
+
+      storageInfo.innerHTML = `
+        <small>Storage: ${mbUsed} MB / 10 MB (${percentUsed}%)</small>
+      `;
+    } catch (error) {
+      console.error('[Storage Info] Failed to calculate storage usage:', error);
+      storageInfo.innerHTML = '<small>Storage: Calculation Error</small>';
+    }
+  }
+
+  // URLパラメータに ?debug=true があれば自動有効化
+  if (window.location.search.includes('debug=true')) {
+    enableDebugMode();
   }
 })();
