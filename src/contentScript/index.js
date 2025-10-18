@@ -16,6 +16,16 @@
   };
 
   // ========================================
+  // デバッグ設定
+  // ========================================
+  const DEBUG = true;  // 開発中はtrue、本番はfalse
+  const debugLog = (...args) => {
+    if (DEBUG) {
+      console.log('[Gemini Slides DEBUG]', ...args);
+    }
+  };
+
+  // ========================================
   // Phase 1: コアデータ構造
   // ========================================
 
@@ -44,6 +54,22 @@
     prompts: [],
     selectedPromptId: null,
     ui: {},
+    feedbackItems: [],
+    pinsBySlide: {},
+    pinMode: {
+      isActive: false,
+      feedbackId: null
+    },
+    pinFeatureInitialized: false,
+    pinOverlay: null,
+    pinOverlayCanvas: null,
+    pinOverlayPins: null,
+    pinOverlayTargets: null,
+    pinOverlayHint: null,
+    pinSlideWatcher: null,
+    pinResizeHandler: null,
+    openPinId: null,
+    lastRenderedSlideIndex: null,
     isPanelVisible: false,
     latestResult: null,
     isCancelled: false,
@@ -80,6 +106,7 @@
     await loadPrompts();
     bindUI();
     hydratePromptsUI();
+    initializePinFeature();
     state.ui.runButton?.addEventListener("click", handleRunCheck);
     state.ui.runAllButton?.addEventListener("click", handleRunAllSlides);
     state.ui.promptSelect?.addEventListener("change", handlePromptSelection);
@@ -332,6 +359,118 @@
         }
         .button.cancel:hover {
           background: #d97706;
+        }
+        .button.tertiary {
+          flex: 0;
+          background: rgba(138,180,248,0.12);
+          border: 1px solid rgba(138,180,248,0.3);
+          color: #8ab4f8;
+          font-size: 12px;
+          padding: 6px 12px;
+        }
+        .button.tertiary:hover {
+          background: rgba(138,180,248,0.2);
+          border-color: rgba(138,180,248,0.5);
+        }
+        .button.tertiary:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .feedback-section {
+          border: 1px solid rgba(138,180,248,0.15);
+          border-radius: 8px;
+          padding: 14px 12px;
+          background: rgba(138,180,248,0.06);
+        }
+        .feedback-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .feedback-header-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaed;
+        }
+        .pin-mode-badge {
+          font-size: 11px;
+          color: #8ab4f8;
+          background: rgba(138,180,248,0.15);
+          border: 1px solid rgba(138,180,248,0.35);
+          border-radius: 999px;
+          padding: 4px 10px;
+        }
+        .feedback-empty {
+          font-size: 12px;
+          color: #9aa0a6;
+          background: rgba(0,0,0,0.15);
+          border-radius: 6px;
+          padding: 12px;
+        }
+        .feedback-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .feedback-item {
+          border-radius: 8px;
+          border: 1px solid rgba(138,180,248,0.2);
+          background: rgba(32,33,36,0.6);
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .feedback-item[data-status="pinned"] {
+          border-left: 3px solid #8ab4f8;
+          background: rgba(138,180,248,0.12);
+        }
+        .feedback-item.is-highlighted {
+          box-shadow: 0 0 0 2px rgba(138,180,248,0.5);
+        }
+        .feedback-item.is-arming {
+          border-style: dashed;
+          border-color: rgba(251,188,4,0.6);
+          background: rgba(251,188,4,0.08);
+        }
+        .feedback-meta {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          font-size: 11px;
+          color: #9aa0a6;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .feedback-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaed;
+        }
+        .feedback-summary {
+          font-size: 12px;
+          color: #e8eaed;
+          line-height: 1.5;
+          margin: 0;
+          white-space: pre-wrap;
+        }
+        .feedback-actions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .feedback-actions .button {
+          flex: 1;
+          min-width: 120px;
+        }
+        .feedback-actions .button.tertiary {
+          flex: 0;
         }
         .progress-bar {
           width: 100%;
@@ -810,7 +949,7 @@
           left: 0;
           width: 100%;
           height: 100%;
-          background: rgba(0, 0, 0, 0.8);
+          background: rgba(0, 0, 0, 0.3);
           z-index: 2147483648;
           display: flex;
           align-items: center;
@@ -903,14 +1042,24 @@
               <label>Screenshot</label>
               <div id=\"gemini-screenshot-preview\" class=\"screenshot-preview\"></div>
             </section>
-            <section class=\"field\">
-              <label>Result</label>
-              <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
-            </section>
-          </div>
+          <section class=\"field\">
+            <label>Result</label>
+            <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
+          </section>
+          <section class=\"field feedback-section\" aria-labelledby=\"gemini-feedback-title\">
+            <div class=\"feedback-header\">
+              <span id=\"gemini-feedback-title\" class=\"feedback-header-title\">AIからの指摘</span>
+              <span id=\"pin-mode-badge\" class=\"pin-mode-badge\" hidden>ピン留めモード</span>
+            </div>
+            <div id=\"gemini-feedback-empty\" class=\"feedback-empty\">
+              レビューを実行すると指摘がここに表示されます。ピン留めするとスライド上に位置を記録できます。
+            </div>
+            <ul id=\"gemini-feedback-list\" class=\"feedback-list\" aria-live=\"polite\"></ul>
+          </section>
+        </div>
 
-          <!-- コンテキストタブ -->
-          <div class=\"tab-content\" data-tab-content=\"context\">
+        <!-- コンテキストタブ -->
+        <div class=\"tab-content\" data-tab-content=\"context\">
             <div class=\"context-section\">
               <div class=\"context-section-title\" data-toggle=\"static-context\">
                 <span>Project Context</span>
@@ -981,6 +1130,15 @@
     state.ui.resetPromptButton = shadowRoot.querySelector("#gemini-reset-prompt");
     state.ui.result = shadowRoot.querySelector("#gemini-result");
     state.ui.screenshotPreview = shadowRoot.querySelector("#gemini-screenshot-preview");
+    state.ui.feedbackList = shadowRoot.querySelector("#gemini-feedback-list");
+    state.ui.feedbackEmpty = shadowRoot.querySelector("#gemini-feedback-empty");
+    state.ui.pinModeBadge = shadowRoot.querySelector("#pin-mode-badge");
+    if (state.ui.feedbackEmpty) {
+      state.ui.feedbackEmpty.hidden = false;
+    }
+    if (state.ui.feedbackList) {
+      state.ui.feedbackList.hidden = true;
+    }
 
     // Phase 2: Context tab elements
     state.ui.tabButtons = shadowRoot.querySelectorAll(".tab-button");
@@ -1162,16 +1320,17 @@
 
       // ユーザーが選択したプロンプトとコンテキストを結合
       const userPrompt = state.ui.promptTextarea.value.trim();
-      const fullPrompt = contextPrompt
+      const basePrompt = contextPrompt
         ? `${contextPrompt}[レビュー依頼]\n${userPrompt}\n\n以下のスライドを、上記のコンテキストを踏まえてレビューしてください。`
         : userPrompt;
+      const finalPrompt = appendFeedbackFormatInstructions(basePrompt);
 
-      console.log('[Gemini Slides] Full prompt with context:', fullPrompt);
+      console.log('[Gemini Slides] Full prompt with context:', finalPrompt);
 
       const response = await chrome.runtime.sendMessage({
         type: "GEMINI_RUN_CHECK",
         payload: {
-          prompt: fullPrompt,  // コンテキスト統合済みプロンプト
+          prompt: finalPrompt,  // 位置情報フォーマット込みプロンプト
           presentationSummary
         }
       });
@@ -1315,16 +1474,17 @@
 
       // ユーザーが選択したプロンプトとコンテキストを結合
       const userPrompt = state.ui.promptTextarea.value.trim();
-      const fullPrompt = contextPrompt
+      const basePrompt = contextPrompt
         ? `${contextPrompt}[レビュー依頼]\n${userPrompt}\n\n以下の${allSlides.length}枚のスライドを含むプレゼンテーションを、上記のコンテキストを踏まえてレビューしてください。`
         : userPrompt;
+      const finalPrompt = appendFeedbackFormatInstructions(basePrompt);
 
-      console.log('[Gemini Slides] Full prompt with context (PDF):', fullPrompt);
+      console.log('[Gemini Slides] Full prompt with context (PDF):', finalPrompt);
 
       const response = await chrome.runtime.sendMessage({
         type: "GEMINI_RUN_CHECK_PDF",
         payload: {
-          prompt: fullPrompt,  // コンテキスト統合済みプロンプト
+          prompt: finalPrompt,  // 位置情報フォーマット込みプロンプト
           pdfData: pdfDataUrl,
           slideCount: allSlides.length,
           capturedAt: Date.now()
@@ -1528,6 +1688,7 @@
     }
     state.ui.result.className = "status success";
     state.ui.result.textContent = state.latestResult.text;
+    updateFeedbackFromResult(state.latestResult.text);
 
     // Play completion notification sound
     playNotificationSound();
@@ -1975,17 +2136,27 @@
   }
 
   function getSlideOptionNodes() {
+    // Google SlidesのフィルムストリップはSVG要素として実装されている
+    // 優先順位: SVG要素 > HTML [role="option"] 要素
+
+    // 1. SVG フィルムストリップサムネイルを検索（最も一般的）
+    const svgThumbnails = document.querySelectorAll('g.punch-filmstrip-thumbnail');
+    if (svgThumbnails.length > 0) {
+      debugLog(`Found ${svgThumbnails.length} SVG filmstrip thumbnails`);
+      return Array.from(svgThumbnails);
+    }
+
+    // 2. フォールバック: HTML要素ベースのフィルムストリップ（古いバージョン用）
     const selectors = [
       '[role="listbox"] [role="option"]',
-      '[role="grid"] [role="option"]',
-      '[aria-label*="Slide"]',
-      '[aria-label*="スライド"]',
-      '[aria-label*="ページ"]'
+      '[role="grid"] [role="option"]'
     ];
     const nodes = [];
     const seen = new WeakSet();
+
     selectors.forEach((selector) => {
-      document.querySelectorAll(selector).forEach((candidate) => {
+      const candidates = document.querySelectorAll(selector);
+      candidates.forEach((candidate) => {
         if (!(candidate instanceof HTMLElement)) return;
         if (seen.has(candidate)) return;
         if (!isSlideOptionNode(candidate)) return;
@@ -1993,28 +2164,55 @@
         nodes.push(candidate);
       });
     });
-    return nodes.sort((a, b) => {
-      const ai = getSlideIndex(a);
-      const bi = getSlideIndex(b);
-      if (ai === null && bi === null) return 0;
-      if (ai === null) return 1;
-      if (bi === null) return -1;
-      return ai - bi;
-    });
+
+    if (nodes.length > 0) {
+      debugLog(`Found ${nodes.length} HTML filmstrip nodes`);
+      return nodes.sort((a, b) => {
+        const ai = getSlideIndex(a);
+        const bi = getSlideIndex(b);
+        if (ai === null && bi === null) return 0;
+        if (ai === null) return 1;
+        if (bi === null) return -1;
+        return ai - bi;
+      });
+    }
+
+    // 3. 見つからなかった場合
+    debugLog('getSlideOptionNodes: NO NODES FOUND');
+    return [];
   }
 
   function isSlideOptionNode(node) {
     if (!node) return false;
-    if (node.hasAttribute("data-slide-index") || node.dataset?.slideIndex) {
-      return true;
+
+    // プレゼン関連の要素を明示的に除外
+    const classList = node.classList ? Array.from(node.classList) : [];
+    const excludedClasses = ['punch-present', 'punch-viewer-content'];
+    if (excludedClasses.some(cls => classList.some(c => c.includes(cls)))) {
+      return false;
     }
+
+    // role="option" を持ち、かつフィルムストリップに含まれる要素のみを対象
+    if (node.getAttribute('role') !== 'option') {
+      return false;
+    }
+
+    // aria-label にスライド番号が含まれているかチェック
     const label = node.getAttribute("aria-label") || "";
     if (!label) return false;
-    if (/(?:Slide|スライド|ページ|Diapositiva|Diapositive)\s*\d+/i.test(label)) {
-      return true;
+
+    // スライド番号を含むパターンのみ許可
+    if (!/(?:Slide|スライド|ページ|Diapositiva|Diapositive)\s*\d+/i.test(label)) {
+      return false;
     }
-    const lower = label.toLowerCase();
-    return lower.includes("slide") || label.includes("スライド") || label.includes("ページ");
+
+    // フィルムストリップのコンテナ内にあるかチェック
+    const hasFilmstripParent = node.closest('[role="listbox"], [role="grid"]');
+    if (!hasFilmstripParent) {
+      return false;
+    }
+
+    return true;
   }
 
   function getSlideIndex(node) {
@@ -2044,14 +2242,35 @@
 
   function getActiveSlideOrder(slideNodes) {
     if (!Array.isArray(slideNodes) || !slideNodes.length) return -1;
+
     const activeNode = slideNodes.find((node) => {
+      // HTML要素の場合
       if (node.getAttribute("aria-selected") === "true") return true;
-      return (
-        node.classList.contains("punch-filmstrip-thumbnail-active") ||
-        node.classList.contains("punch-filmstrip-selected") ||
-        node.classList.contains("is-selected")
-      );
+
+      // SVG要素の場合は className.baseVal を使う
+      if (node.className && node.className.baseVal) {
+        const classes = node.className.baseVal;
+        if (classes.includes("punch-filmstrip-selected") ||
+            classes.includes("is-selected")) {
+          return true;
+        }
+        // 選択されたサムネイルは子要素に特別なクラスがある
+        const pageNumber = node.querySelector('.punch-filmstrip-selected-thumbnail-pagenumber');
+        if (pageNumber) return true;
+      }
+
+      // HTML要素のclassList（フォールバック）
+      if (node.classList) {
+        return (
+          node.classList.contains("punch-filmstrip-thumbnail-active") ||
+          node.classList.contains("punch-filmstrip-selected") ||
+          node.classList.contains("is-selected")
+        );
+      }
+
+      return false;
     });
+
     if (!activeNode) return -1;
     return slideNodes.indexOf(activeNode);
   }
@@ -2095,6 +2314,15 @@
     return `proj_${timestamp}_${random}`;
   }
 
+  function generatePinId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `pin_${crypto.randomUUID()}`;
+    }
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    return `pin_${timestamp}_${random}`;
+  }
+
   /**
    * Google SlidesのURLからプレゼンテーションIDを抽出
    * @param {string} url - Google SlidesのURL
@@ -2107,9 +2335,11 @@
 
   /**
    * 現在のプレゼンテーションのタイトルを取得
-   * @returns {string} タイトル（取得できない場合は空文字列）
+   * @param {number} maxRetries - 最大リトライ回数
+   * @param {number} retryDelay - リトライ間隔(ms)
+   * @returns {Promise<string|null>} タイトル（取得できない場合はnull）
    */
-  function getPresentationTitle() {
+  async function getPresentationTitle(maxRetries = 3, retryDelay = 500) {
     // Google Slidesのタイトル要素を探す
     const titleSelectors = [
       '.docs-title-input',
@@ -2117,14 +2347,24 @@
       '[role="textbox"][aria-label*="タイトル"]'
     ];
 
-    for (const selector of titleSelectors) {
-      const element = document.querySelector(selector);
-      if (element && element.textContent) {
-        return element.textContent.trim();
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      for (const selector of titleSelectors) {
+        const element = document.querySelector(selector);
+        if (element && element.textContent && element.textContent.trim()) {
+          const title = element.textContent.trim();
+          console.log(`[getPresentationTitle] Title found: "${title}" (attempt ${attempt + 1})`);
+          return title;
+        }
+      }
+
+      if (attempt < maxRetries - 1) {
+        console.log(`[getPresentationTitle] Title not found, retrying in ${retryDelay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
 
-    return '';
+    console.warn(`[getPresentationTitle] Could not find title after ${maxRetries} attempts`);
+    return null;
   }
 
   /**
@@ -2484,6 +2724,9 @@
    * 新規プロジェクトを作成（Phase 6: ダイアログベース）
    */
   async function createNewProject() {
+    // タイトルを事前に取得
+    const defaultTitle = await getPresentationTitle() || '';
+
     return new Promise((resolve) => {
       // ダイアログを作成
       const dialogHTML = `
@@ -2499,7 +2742,7 @@
                 id="project-name-input"
                 class="form-input"
                 placeholder="例: Q2 営業報告会"
-                value="${getPresentationTitle() || ''}"
+                value="${defaultTitle}"
               />
             </div>
 
@@ -2566,11 +2809,9 @@
             createdAt: new Date().toISOString()
           };
 
-          // Phase 6: キックオフURLがある場合は保存（UIのみなので実際の抽出は後のフェーズ）
+          // Phase 6: キックオフURLがある場合は自動抽出
           if (kickoffUrl) {
             newProject.staticContext.kickoffUrl = kickoffUrl;
-            // TODO: Phase 6-2以降で実装する自動抽出機能
-            console.log('[Phase 6] Kickoff URL will be processed:', kickoffUrl);
           }
 
           await saveProject(projectId, newProject);
@@ -2592,6 +2833,42 @@
           await updateContextIndicator();
 
           console.log('[Gemini Slides] Created new project:', projectId);
+
+          // Phase 6: キックオフURLから自動抽出
+          if (kickoffUrl) {
+            try {
+              showLoadingDialog('キックオフURLからテキストを抽出中...');
+              const extractedText = await extractTextFromKickoffUrl(kickoffUrl);
+
+              if (extractedText && !extractedText.includes('エラー')) {
+                showLoadingDialog('Gemini APIでコンテキストを解析中...');
+                const context = await extractContextWithGemini(extractedText);
+
+                if (context) {
+                  showLoadingDialog('コンテキストを保存中...');
+                  // 新規プロジェクトなので既存のコンテキストはない→直接設定
+                  if (state.ui.contextPurpose) {
+                    state.ui.contextPurpose.value = context.purpose || '';
+                  }
+                  if (state.ui.contextAudience) {
+                    state.ui.contextAudience.value = context.audience || '';
+                  }
+                  await handleSaveContext();
+                  hideLoadingDialog();
+                  alert('プロジェクトを作成し、キックオフURLからコンテキストを自動設定しました！');
+                } else {
+                  hideLoadingDialog();
+                }
+              } else {
+                hideLoadingDialog();
+              }
+            } catch (error) {
+              hideLoadingDialog();
+              console.error('[Phase 6] Auto-extraction failed:', error);
+              // エラーは無視（手動入力にフォールバック）
+            }
+          }
+
           resolve(projectId);
         } catch (error) {
           console.error('[Gemini Slides] Failed to create new project:', error);
@@ -2926,12 +3203,15 @@
    */
   async function handleSaveContext() {
     try {
+      console.log('[handleSaveContext] Starting save...');
+
       if (!state.currentProjectId) {
         console.warn('[Gemini Slides] No current project ID');
         return;
       }
 
       // 現在のプロジェクトデータを取得
+      console.log('[handleSaveContext] Loading project data...');
       const projectData = await loadProject(state.currentProjectId);
       if (!projectData) {
         console.error('[Gemini Slides] Project data not found');
@@ -2947,6 +3227,7 @@
       // 週次コンテキストを更新
       projectData.externalContexts = getAllWeeklyContextsFromUI();
 
+      console.log('[handleSaveContext] Saving project data...');
       // 保存
       const success = await saveProject(state.currentProjectId, projectData);
 
@@ -2964,11 +3245,33 @@
           }, 1500);
         }
 
-        // Phase 4: コンテキストインジケーター更新
-        await updateContextIndicator();
+        console.log('[handleSaveContext] Updating context indicator...');
+        // Phase 4: コンテキストインジケーター更新（タイムアウト付き）
+        try {
+          await Promise.race([
+            updateContextIndicator(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('updateContextIndicator timeout')), 3000)
+            )
+          ]);
+        } catch (error) {
+          console.warn('[handleSaveContext] Context indicator update failed or timed out:', error);
+        }
 
-        // Phase 5: ストレージ情報更新
-        await updateStorageInfo();
+        console.log('[handleSaveContext] Updating storage info...');
+        // Phase 5: ストレージ情報更新（タイムアウト付き）
+        try {
+          await Promise.race([
+            updateStorageInfo(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('updateStorageInfo timeout')), 3000)
+            )
+          ]);
+        } catch (error) {
+          console.warn('[handleSaveContext] Storage info update failed or timed out:', error);
+        }
+
+        console.log('[handleSaveContext] Save completed successfully');
       } else {
         console.error('[Gemini Slides] Failed to save context');
       }
@@ -3050,17 +3353,220 @@
 
         dialog.remove();
 
-        // TODO: Phase 6-2以降で実装
-        // ここでは仮の処理として、ローディングダイアログを表示してすぐに消す
-        showLoadingDialog('キックオフURLから情報を抽出中...');
+        // Phase 6-2, 6-3, 6-4: 実際の抽出処理
+        try {
+          console.log('[extractFromKickoffUrl] Starting extraction process...');
+          showLoadingDialog('キックオフURLからテキストを抽出中...');
 
-        setTimeout(() => {
+          // Step 1: URLからテキストを抽出
+          console.log('[extractFromKickoffUrl] Step 1: Extracting text from URL...');
+          const extractedText = await extractTextFromKickoffUrl(kickoffUrl);
+
+          if (!extractedText || extractedText.includes('エラー')) {
+            hideLoadingDialog();
+            alert('テキストの抽出に失敗しました。\n\n' + extractedText);
+            resolve(null);
+            return;
+          }
+
+          console.log('[extractFromKickoffUrl] Text extracted successfully, length:', extractedText.length);
+          showLoadingDialog('Gemini APIでコンテキストを解析中...');
+
+          // Step 2: Gemini APIでコンテキストを抽出
+          console.log('[extractFromKickoffUrl] Step 2: Extracting context with Gemini...');
+          const context = await extractContextWithGemini(extractedText);
+
+          if (!context) {
+            hideLoadingDialog();
+            alert('コンテキストの抽出に失敗しました。手動で入力してください。');
+            resolve(null);
+            return;
+          }
+
+          console.log('[extractFromKickoffUrl] Context extracted successfully:', context);
+          showLoadingDialog('既存のコンテキストとマージ中...');
+
+          // Step 3: 既存のコンテキストと差分マージ
+          console.log('[extractFromKickoffUrl] Step 3: Merging context...');
+          await mergeExtractedContext(context);
+
+          console.log('[extractFromKickoffUrl] All steps completed successfully');
           hideLoadingDialog();
-          alert('Phase 6-2以降で実装される機能です。\n現在はUI確認用のダミー動作です。');
+          alert('キックオフURLからコンテキストを取得しました！\n\nProject Contextセクションを確認してください。');
+          resolve(context);
+        } catch (error) {
+          hideLoadingDialog();
+          console.error('[Phase 6] Extraction failed:', error);
+          alert('抽出中にエラーが発生しました:\n\n' + error.message);
           resolve(null);
-        }, 1500);
+        }
       });
     });
+  }
+
+  /**
+   * Phase 6-2: URLからテキストを抽出（Background scriptに依頼）
+   */
+  async function extractTextFromKickoffUrl(url) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        {
+          type: 'EXTRACT_FROM_KICKOFF_URL',
+          url: url
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+
+          if (response && response.ok) {
+            resolve(response.text);
+          } else {
+            reject(new Error(response?.error || 'テキストの抽出に失敗しました'));
+          }
+        }
+      );
+    });
+  }
+
+  /**
+   * Phase 6-3: Gemini APIでコンテキストを抽出
+   */
+  async function extractContextWithGemini(rawText) {
+    console.log('[extractContextWithGemini] Starting context extraction...');
+
+    const prompt = `以下はGoogle Slidesから抽出されたテキストです。このテキストから、プレゼンテーションのコンテキスト情報を抽出してください。
+
+抽出するべき情報：
+1. purpose（目的）: このプレゼンテーションの目的や目標
+2. audience（対象者）: 想定される聴衆や対象者
+
+必ず以下のJSON形式で回答してください。他の説明文は含めないでください：
+{
+  "purpose": "抽出された目的",
+  "audience": "抽出された対象者"
+}
+
+情報が見つからない場合は、空文字列を返してください。
+
+テキスト：
+${rawText}`;
+
+    try {
+      console.log('[extractContextWithGemini] Sending request to background script...');
+      // Background scriptにGemini APIリクエストを送信
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'GEMINI_EXTRACT_CONTEXT',
+            prompt: prompt
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            resolve(response);
+          }
+        );
+      });
+
+      console.log('[extractContextWithGemini] Received response:', response);
+
+      if (!response || !response.ok) {
+        throw new Error(response?.error || 'Gemini APIの呼び出しに失敗しました');
+      }
+
+      // JSONをパース
+      const text = response.result.text;
+      console.log('[Phase 6] Gemini response:', text);
+
+      // JSON部分を抽出（マークダウンのコードブロックに囲まれている可能性があるため）
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('JSONが見つかりませんでした');
+      }
+
+      const context = JSON.parse(jsonMatch[0]);
+      console.log('[extractContextWithGemini] Parsed context:', context);
+      return context;
+    } catch (error) {
+      console.error('[Phase 6] Gemini extraction failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Phase 6-4: 抽出されたコンテキストを既存のコンテキストとマージ
+   */
+  async function mergeExtractedContext(extractedContext) {
+    console.log('[mergeExtractedContext] Starting merge...', extractedContext);
+
+    if (!state.currentProjectId) {
+      throw new Error('プロジェクトが選択されていません');
+    }
+
+    console.log('[mergeExtractedContext] Loading project:', state.currentProjectId);
+    const projectData = await loadProject(state.currentProjectId);
+    if (!projectData) {
+      throw new Error('プロジェクトデータが見つかりません');
+    }
+
+    console.log('[mergeExtractedContext] Project data loaded:', projectData);
+
+    // 既存のコンテキストを取得
+    const existingPurpose = projectData.staticContext?.purpose || '';
+    const existingAudience = projectData.staticContext?.audience || '';
+
+    // 差分をチェックして追記
+    let newPurpose = existingPurpose;
+    let newAudience = existingAudience;
+
+    if (extractedContext.purpose) {
+      if (existingPurpose && !existingPurpose.includes(extractedContext.purpose)) {
+        // 既存の情報があり、新しい情報が含まれていない場合は追記
+        newPurpose = existingPurpose + '\n\n' + extractedContext.purpose;
+      } else if (!existingPurpose) {
+        // 既存の情報がない場合は新しい情報をセット
+        newPurpose = extractedContext.purpose;
+      }
+      // 既に含まれている場合は何もしない
+    }
+
+    if (extractedContext.audience) {
+      if (existingAudience && !existingAudience.includes(extractedContext.audience)) {
+        newAudience = existingAudience + '\n\n' + extractedContext.audience;
+      } else if (!existingAudience) {
+        newAudience = extractedContext.audience;
+      }
+    }
+
+    console.log('[mergeExtractedContext] Updating UI with new values...');
+
+    // UIを更新
+    if (state.ui.contextPurpose) {
+      state.ui.contextPurpose.value = newPurpose;
+    }
+    if (state.ui.contextAudience) {
+      state.ui.contextAudience.value = newAudience;
+    }
+
+    console.log('[mergeExtractedContext] Saving context...');
+
+    // 自動保存（タイムアウト付き）
+    try {
+      await Promise.race([
+        handleSaveContext(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Save context timeout after 10 seconds')), 10000)
+        )
+      ]);
+      console.log('[Phase 6] Context merged and saved');
+    } catch (error) {
+      console.error('[mergeExtractedContext] Failed to save context:', error);
+      throw error;
+    }
   }
 
   /**
@@ -3200,7 +3706,7 @@
       }
 
       // 新規URL: タイトル類似度チェック
-      const currentTitle = getPresentationTitle();
+      const currentTitle = await getPresentationTitle();
       if (!currentTitle) {
         console.warn('[Project Detection] Cannot get presentation title');
         return;
@@ -3463,6 +3969,1493 @@
     }
 
     setStatus(userMessage, 'error');
+  }
+
+  // ========================================
+  // Phase 7: ピン留めフィードバック UI
+  // ========================================
+
+  function initializePinFeature() {
+    if (state.pinFeatureInitialized) {
+      renderFeedbackList();
+      renderPinsForCurrentSlide();
+      return;
+    }
+
+    injectPinStyles();
+    ensurePinOverlay();
+
+    if (state.ui.feedbackList) {
+      state.ui.feedbackList.addEventListener("click", handleFeedbackListClick);
+    }
+
+    document.addEventListener("keydown", handlePinKeydown, true);
+
+    if (!state.pinResizeHandler) {
+      state.pinResizeHandler = debounce(updatePinOverlayBounds, 150);
+    }
+    window.addEventListener("resize", state.pinResizeHandler);
+    window.addEventListener("scroll", state.pinResizeHandler, true);
+
+    startPinSlideWatcher();
+    registerPinDebugAPI();
+
+    if (shouldLoadPinMockData()) {
+      setFeedbackItems(getMockFeedbackItems());
+    } else if (!state.feedbackItems.length) {
+      setFeedbackItems([]);
+    } else {
+      regeneratePinsFromFeedback();
+      renderFeedbackList();
+      updatePinOverlayVisibility();
+    }
+
+    updatePinOverlayBounds();
+    renderPinsForCurrentSlide();
+
+    state.pinFeatureInitialized = true;
+  }
+
+  function injectPinStyles() {
+    if (document.getElementById("gemini-pin-overlay-styles")) return;
+    const style = document.createElement("style");
+    style.id = "gemini-pin-overlay-styles";
+    style.textContent = `
+#gemini-pin-overlay {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2147483648;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+#gemini-pin-overlay.is-visible {
+  opacity: 1;
+}
+#gemini-pin-overlay .gemini-pin-overlay__canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#gemini-pin-overlay.pin-mode .gemini-pin-overlay__canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+#gemini-pin-overlay .gemini-pin-overlay__pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#gemini-pin-overlay .gemini-pin-overlay__targets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#gemini-pin-overlay .gemini-pin-overlay__target {
+  position: absolute;
+  border: 2px solid rgba(138,180,248,0.55);
+  background: rgba(138,180,248,0.2);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  border-radius: 12px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+#gemini-pin-overlay .gemini-pin-overlay__target.is-open {
+  opacity: 0.95;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+}
+#gemini-pin-overlay .gemini-pin {
+  position: absolute;
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  transform: translate(-50%, 0);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 1;
+}
+#gemini-pin-overlay .gemini-pin__icon {
+  background: #1a73e8;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__icon {
+  background: #8ab4f8;
+  color: #202124;
+}
+#gemini-pin-overlay .gemini-pin__bubble {
+  position: relative;
+  min-width: 200px;
+  max-width: 260px;
+  background: rgba(32,33,36,0.92);
+  color: #e8eaed;
+  border: 1px solid rgba(138,180,248,0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+  pointer-events: auto;
+  box-sizing: border-box;
+  z-index: 2;
+}
+#gemini-pin-overlay .gemini-pin__bubble::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  background: rgba(32,33,36,0.92);
+  border-left: 1px solid rgba(138,180,248,0.35);
+  border-top: 1px solid rgba(138,180,248,0.35);
+  transform: rotate(45deg);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble,
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+#gemini-pin-overlay .gemini-pin__bubble-title {
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+#gemini-pin-overlay .gemini-pin__bubble-body {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
+#gemini-pin-overlay .gemini-pin-overlay__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(32,33,36,0.88);
+  color: #e8eaed;
+  border: 1px solid rgba(138,180,248,0.35);
+  pointer-events: auto;
+  font-size: 12px;
+}
+#gemini-pin-overlay.pin-mode .gemini-pin-overlay__hint {
+  display: inline-flex;
+}
+#gemini-pin-overlay .gemini-pin-overlay__hint button {
+  background: rgba(60,64,67,0.8);
+  border: 1px solid rgba(138,180,248,0.3);
+  color: #e8eaed;
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+#gemini-pin-overlay .gemini-pin-overlay__hint button:hover {
+  background: rgba(95,99,104,0.8);
+}
+`;
+    document.head.appendChild(style);
+  }
+
+  function ensurePinOverlay() {
+    if (state.pinOverlay) return;
+    const existing = document.getElementById("gemini-pin-overlay");
+    if (existing) {
+      existing.remove();
+    }
+    const overlay = document.createElement("div");
+    overlay.id = "gemini-pin-overlay";
+    overlay.setAttribute("aria-hidden", "true");
+    overlay.innerHTML = `
+      <div class="gemini-pin-overlay__canvas"></div>
+      <div class="gemini-pin-overlay__targets"></div>
+      <div class="gemini-pin-overlay__pins" aria-live="polite"></div>
+      <div class="gemini-pin-overlay__hint">
+        <span>スライドをクリックしてピンを配置</span>
+        <button type="button" class="gemini-pin-overlay__hint-cancel">キャンセル (Esc)</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    state.pinOverlay = overlay;
+    state.pinOverlayCanvas = overlay.querySelector(".gemini-pin-overlay__canvas");
+    state.pinOverlayTargets = overlay.querySelector(".gemini-pin-overlay__targets");
+    state.pinOverlayPins = overlay.querySelector(".gemini-pin-overlay__pins");
+    state.pinOverlayHint = overlay.querySelector(".gemini-pin-overlay__hint");
+
+    state.pinOverlayCanvas?.addEventListener("click", handlePinOverlayClick);
+    state.pinOverlayPins?.addEventListener("click", handlePinContainerClick);
+
+    const cancelButton = overlay.querySelector(".gemini-pin-overlay__hint-cancel");
+    cancelButton?.addEventListener("click", () => exitPinMode("cancel-button"));
+  }
+
+  function getMockFeedbackItems() {
+    return [
+      {
+        id: "feedback-mock-1",
+        title: "グラフの結論を先に提示しましょう",
+        summary: "スライド2のグラフは補助線が多く視線が泳ぎます。強調色を1つに絞り、結論テキストをグラフの直上に配置すると理解が早まります。",
+        anchors: [
+          {
+            slidePage: 2,
+            rect: { x: 0.54, y: 0.32, width: 0.28, height: 0.36 }
+          }
+        ]
+      },
+      {
+        id: "feedback-mock-2",
+        title: "導入文に観点が不足しています",
+        summary: "スライド1のリード文が抽象的です。「現状課題」「提案方針」の2点を冒頭で明示すると聞き手が目的を掴みやすくなります。",
+        anchors: [
+          {
+            slidePage: 1,
+            rect: { x: 0.25, y: 0.22, width: 0.42, height: 0.26 }
+          }
+        ]
+      },
+      {
+        id: "feedback-mock-3",
+        title: "CTAボタンのコントラストを調整",
+        summary: "スライド4の行動喚起ボタンが背景と近い色味です。彩度を上げるか、外枠を追加して視認性を上げましょう。",
+        anchors: [
+          {
+            slidePage: 4,
+            rect: { x: 0.65, y: 0.68, width: 0.18, height: 0.14 }
+          }
+        ]
+      }
+    ];
+  }
+
+  function shouldLoadPinMockData() {
+    if (window.__GEMINI_PINS_DEMO__ === true) {
+      return true;
+    }
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      if (params.has("geminiPinsDemo")) {
+        return true;
+      }
+    } catch (error) {
+      // ignore malformed URL search params
+    }
+    return false;
+  }
+
+  function setFeedbackItems(items) {
+    state.feedbackItems = Array.isArray(items)
+      ? items.map((item) => ({ ...item }))
+      : [];
+    regeneratePinsFromFeedback();
+    renderFeedbackList();
+    updatePinOverlayVisibility();
+  }
+
+  function updateFeedbackFromResult(text) {
+    const items = parseGeminiFeedbackText(text);
+    console.log('[Gemini Slides] Parsed feedback items:', items);
+    setFeedbackItems(items);
+    focusInitialAnchor(items);
+  }
+
+  function appendFeedbackFormatInstructions(promptText) {
+    const base = (promptText || "").trim();
+    const marker = "[出力フォーマット]";
+    if (!base) {
+      return formatFeedbackSpecification(marker);
+    }
+    if (base.includes(marker) || base.includes("[OUTPUT FORMAT]")) {
+      return base;
+    }
+    return `${base}\n\n${formatFeedbackSpecification(marker)}`;
+  }
+
+  async function focusInitialAnchor(items) {
+    const list = Array.isArray(items) ? items : state.feedbackItems;
+    if (!Array.isArray(list) || !list.length) return;
+    const targetItem = list.find((item) => Array.isArray(item?.anchors) && item.anchors.length > 0)
+      || list.find((item) => item.slidePage);
+    if (!targetItem) return;
+
+    const firstAnchor = Array.isArray(targetItem.anchors) && targetItem.anchors.length > 0
+      ? targetItem.anchors[0]
+      : null;
+    const targetSlide = firstAnchor?.slidePage
+      || normalizeSlidePage(targetItem.slidePage ?? targetItem.page ?? targetItem.slide ?? targetItem.pageNumber ?? targetItem.pageIndex);
+
+    if (!targetSlide) return;
+
+    const focusPin = () => {
+      const pins = findPinsByFeedback(targetItem.id);
+      if (pins.length) {
+        const pin = pins[0];
+        renderPinsForCurrentSlide();
+        setOpenPin(pin.pinId, { scrollIntoView: true });
+      } else {
+        renderPinsForCurrentSlide();
+      }
+    };
+
+    const currentSlide = getCurrentSlidePageNumber();
+    if (currentSlide === targetSlide) {
+      focusPin();
+      return;
+    }
+
+    // ユーザーに手動でスライドを開くよう促す
+    showSlideMessage(targetSlide, `スライド ${targetSlide} を開くとピンが表示されます`, "info");
+  }
+
+  function formatFeedbackSpecification(marker) {
+    return `${marker}
+以下のJSONのみをMarkdownの\`\`\`json コードブロック内で出力してください。他の文章や説明は不要です。
+\`\`\`json
+{
+  "feedbackItems": [
+    {
+      "id": "string (一意のID。無い場合は生成)",
+      "title": "短い指摘タイトル",
+      "summary": "詳細な説明と改善提案",
+      "slidePage": 1,
+      "anchors": [
+        {
+          "slidePage": 1,
+          "rect": { "x": 0.12, "y": 0.34, "width": 0.22, "height": 0.18 }
+        }
+      ]
+    }
+  ]
+}
+\`\`\`
+- rect の各値 (x, y, width, height) は 0〜1 の相対座標で記載してください。
+- 複数箇所に指摘がある場合は anchors に複数要素を入れてください。
+- 位置が特定できない場合は anchors を空配列にし、slidePage はコメントの対象ページを設定してください。
+- JSON以外のテキストや補足説明は出力しないでください。`;
+  }
+
+  function parseGeminiFeedbackText(rawText) {
+    const trimmed = typeof rawText === "string" ? rawText.trim() : "";
+    if (!trimmed) {
+      return [];
+    }
+
+    const jsonBlocks = extractJsonBlocks(trimmed);
+    if (jsonBlocks.length) {
+      for (const block of jsonBlocks) {
+        try {
+          const parsed = JSON.parse(block);
+          const items = normalizeFeedbackItemsFromJson(parsed);
+          if (items.length) {
+            return items;
+          }
+        } catch (error) {
+          console.warn('[Gemini Slides] Failed to parse JSON block:', error);
+        }
+      }
+    }
+
+    const blocks = trimmed.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+    if (!blocks.length) {
+      return [{
+        id: "feedback-auto-1",
+        title: "Geminiレビュー結果",
+        summary: trimmed,
+        anchors: []
+      }];
+    }
+
+    const items = blocks.slice(0, 12).map((block, index) => {
+      const lines = block.split(/\n+/).filter(Boolean);
+      const firstLine = lines.shift() || block;
+      const title = tidyFeedbackTitle(firstLine, index);
+      const summary = lines.length ? lines.join("\n").trim() : block;
+      const anchors = extractAnchorsFromText(block);
+      const slidePage = anchors[0]?.slidePage;
+      return {
+        id: `feedback-auto-${index + 1}`,
+        title,
+        summary: summary.length > 800 ? `${summary.slice(0, 800)}…` : summary,
+        anchors,
+        slidePage
+      };
+    });
+
+    return items.length
+      ? items
+      : [{
+          id: "feedback-auto-1",
+          title: "Geminiレビュー結果",
+          summary: trimmed,
+          anchors: []
+        }];
+  }
+
+  function extractJsonBlocks(text) {
+    const blocks = [];
+    const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+    let match;
+    while ((match = codeBlockRegex.exec(text)) !== null) {
+      if (match[1]) {
+        blocks.push(match[1].trim());
+      }
+    }
+
+    if (!blocks.length) {
+      const braceRegex = /\{\s*"[^]*$/;
+      const candidates = text.match(/\{[\s\S]*\}/g);
+      if (candidates) {
+        candidates.forEach((candidate) => {
+          if (braceRegex.test(candidate)) {
+            blocks.push(candidate.trim());
+          }
+        });
+      }
+    }
+
+    return blocks;
+  }
+
+  function extractAnchorsFromText(block) {
+    if (!block) return [];
+    const anchors = [];
+    const slideRegex = /(?:Slide|スライド|ページ)\s*(\d+)/gi;
+    let match;
+    const segments = [];
+
+    while ((match = slideRegex.exec(block)) !== null) {
+      const slidePage = Number(match[1]);
+      if (!slidePage || Number.isNaN(slidePage)) continue;
+      const start = match.index;
+      slideRegex.lastIndex = match.index + match[0].length;
+      const nextMatch = slideRegex.exec(block);
+      const end = nextMatch ? nextMatch.index : block.length;
+      if (nextMatch) {
+        slideRegex.lastIndex = nextMatch.index;
+      }
+      const segment = block.slice(start, end);
+      segments.push({ slidePage, segment });
+    }
+
+    if (!segments.length) {
+      const rect = parseRectFromSegment(block);
+      if (rect) {
+        anchors.push({
+          slidePage: 1,
+          rect,
+          source: "llm-text"
+        });
+      }
+      return sanitizeAnchors(anchors);
+    }
+
+    segments.forEach(({ slidePage, segment }) => {
+      const rect = parseRectFromSegment(segment);
+      if (rect) {
+        anchors.push({
+          slidePage,
+          rect,
+          source: "llm-text"
+        });
+        return;
+      }
+      const point = parsePointFromSegment(segment);
+      if (point) {
+        anchors.push({
+          slidePage,
+          position: point,
+          source: "llm-text"
+        });
+      }
+    });
+
+    return sanitizeAnchors(anchors);
+  }
+
+  function parseRectFromSegment(segment) {
+    if (!segment) return null;
+    const rectPatterns = [
+      /rect(?:angle)?\s*[:=]?\s*\(\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*\)/i,
+      /bbox\s*[:=]?\s*\(\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*\)/i,
+      /area\s*[:=]?\s*\(\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*\)/i
+    ];
+
+    for (const pattern of rectPatterns) {
+      const m = segment.match(pattern);
+      if (m) {
+        return {
+          x: m[1],
+          y: m[2],
+          width: m[3],
+          height: m[4]
+        };
+      }
+    }
+
+    const xywhPattern = /x\s*[:=]\s*([-+]?\d*\.?\d+%?)\D{0,20}?y\s*[:=]\s*([-+]?\d*\.?\d+%?)\D{0,20}?(?:w(?:idth)?|幅)\s*[:=]\s*([-+]?\d*\.?\d+%?)\D{0,20}?(?:h(?:eight)?|高さ)\s*[:=]\s*([-+]?\d*\.?\d+%?)/i;
+    const xywh = segment.match(xywhPattern);
+    if (xywh) {
+      return {
+        x: xywh[1],
+        y: xywh[2],
+        width: xywh[3],
+        height: xywh[4]
+      };
+    }
+
+    const numbers = segment.match(/[-+]?\d*\.?\d+%?/g);
+    if (numbers && numbers.length >= 4) {
+      return {
+        x: numbers[0],
+        y: numbers[1],
+        width: numbers[2],
+        height: numbers[3]
+      };
+    }
+
+    return null;
+  }
+
+  function parsePointFromSegment(segment) {
+    if (!segment) return null;
+    const pointPatterns = [
+      /center\s*\(\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*\)/i,
+      /position\s*[:=]?\s*\(\s*([-+]?\d*\.?\d+%?)\s*,\s*([-+]?\d*\.?\d+%?)\s*\)/i
+    ];
+
+    for (const pattern of pointPatterns) {
+      const m = segment.match(pattern);
+      if (m) {
+        return {
+          x: m[1],
+          y: m[2]
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeFeedbackItemsFromJson(parsed) {
+    if (!parsed) return [];
+    const items = Array.isArray(parsed?.feedbackItems)
+      ? parsed.feedbackItems
+      : Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!items.length) return [];
+    return items.map((item, index) => {
+      const anchors = sanitizeAnchors(Array.isArray(item?.anchors) ? item.anchors : []);
+      const slidePage = anchors[0]?.slidePage
+        || normalizeSlidePage(item?.slidePage ?? item?.page ?? item?.slide ?? item?.pageNumber ?? item?.pageIndex ?? item?.slide_number, index)
+        || undefined;
+      return {
+        id: item?.id || `feedback-json-${index + 1}`,
+        title: item?.title || tidyFeedbackTitle(item?.heading || item?.summary || `指摘 ${index + 1}`, index),
+        summary: (item?.summary || item?.details || "").toString().trim(),
+        anchors,
+        slidePage
+      };
+    });
+  }
+
+  function tidyFeedbackTitle(rawTitle, index) {
+    const fallback = `指摘 ${index + 1}`;
+    if (!rawTitle) return fallback;
+    return rawTitle
+      .replace(/^[\s*-]+/, "")
+      .replace(/^\d+\s*[\).:-]?\s*/, "")
+      .trim() || fallback;
+  }
+
+  function sanitizeAnchors(anchorList) {
+    return anchorList
+      .map((anchor, index) => sanitizeAnchorData(anchor, index))
+      .filter(Boolean);
+  }
+
+  function sanitizeAnchorData(anchor, index = 0) {
+    if (!anchor) return null;
+    const slidePageValue = anchor.slidePage ?? anchor.page ?? anchor.slide ?? anchor.pageNumber ?? anchor.pageIndex ?? anchor.slide_number;
+    const slidePage = normalizeSlidePage(slidePageValue, index);
+    if (!slidePage) {
+      return null;
+    }
+
+    let rectCandidate = anchor.rect ?? anchor.box ?? anchor.bbox ?? anchor.bounds ?? anchor.rectangle;
+    if (Array.isArray(rectCandidate) && rectCandidate.length >= 4) {
+      rectCandidate = {
+        x: rectCandidate[0],
+        y: rectCandidate[1],
+        width: rectCandidate[2],
+        height: rectCandidate[3]
+      };
+    } else if (typeof rectCandidate === "string") {
+      const match = rectCandidate.match(/([-+]?\d*\.?\d+%?)/g);
+      if (match && match.length >= 4) {
+        rectCandidate = {
+          x: match[0],
+          y: match[1],
+          width: match[2],
+          height: match[3]
+        };
+      }
+    }
+
+    const rect = rectCandidate ? normalizeRect(rectCandidate) : null;
+
+    let positionCandidate = anchor.position ?? anchor.point ?? anchor.center;
+    if (Array.isArray(positionCandidate) && positionCandidate.length >= 2) {
+      positionCandidate = { x: positionCandidate[0], y: positionCandidate[1] };
+    } else if (typeof positionCandidate === "string") {
+      const coords = positionCandidate.match(/([-+]?\d*\.?\d+%?)/g);
+      if (coords && coords.length >= 2) {
+        positionCandidate = { x: coords[0], y: coords[1] };
+      }
+    }
+    const position = positionCandidate ? normalizePoint(positionCandidate) : null;
+
+    if (!rect && !position) {
+      return null;
+    }
+
+    const confidenceValue = anchor.confidence ?? anchor.score ?? anchor.confidenceScore;
+    const confidence = typeof confidenceValue === "number"
+      ? confidenceValue
+      : confidenceValue
+        ? Number.parseFloat(String(confidenceValue))
+        : undefined;
+
+    return {
+      slidePage: slidePage,
+      rect: rect || null,
+      position: rect ? null : position, // rect優先
+      anchorIndex: typeof anchor.anchorIndex === "number" ? anchor.anchorIndex : index,
+      source: anchor.source || "ai",
+      confidence: Number.isFinite(confidence) ? confidence : undefined
+    };
+  }
+
+  function normalizeSlidePage(value, fallbackIndex = 0) {
+    if (value === undefined || value === null) {
+      return fallbackIndex >= 0 ? fallbackIndex + 1 : 1;
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value >= 1 ? Math.floor(value) : Math.floor(value) + 1;
+    }
+
+    const stringValue = String(value).trim();
+    const digitMatch = stringValue.match(/\d+/);
+    if (!digitMatch) {
+      return fallbackIndex >= 0 ? fallbackIndex + 1 : 1;
+    }
+    const parsed = Number.parseInt(digitMatch[0], 10);
+    if (Number.isNaN(parsed)) {
+      return fallbackIndex >= 0 ? fallbackIndex + 1 : 1;
+    }
+    return parsed >= 1 ? parsed : 1;
+  }
+
+  function normalizeRect(rect) {
+    if (!rect) return null;
+    const x = toRatioNumber(rect.x ?? rect.left ?? rect.startX);
+    const y = toRatioNumber(rect.y ?? rect.top ?? rect.startY);
+    const width = toRatioNumber(rect.width ?? rect.w ?? rect.right ?? rect.endX, { clamp: false });
+    const height = toRatioNumber(rect.height ?? rect.h ?? rect.bottom ?? rect.endY, { clamp: false });
+
+    if ([x, y, width, height].some((value) => value === null)) {
+      return null;
+    }
+
+    return {
+      x: clamp01(x),
+      y: clamp01(y),
+      width: clamp01(width),
+      height: clamp01(height)
+    };
+  }
+
+  function normalizePoint(point) {
+    if (!point) return null;
+    const x = toRatioNumber(point.x ?? point[0]);
+    const y = toRatioNumber(point.y ?? point[1]);
+    if (x === null || y === null) {
+      return null;
+    }
+    return {
+      x: clamp01(x),
+      y: clamp01(y)
+    };
+  }
+
+  function toRatioNumber(value, options = { clamp: true }) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    let stringValue = value;
+    if (typeof stringValue === "string") {
+      stringValue = stringValue.trim();
+      if (!stringValue) return null;
+    }
+
+    const percent = typeof stringValue === "string" && stringValue.includes("%");
+    const numeric = Number.parseFloat(String(stringValue).replace(/[^\d.+-eE]/g, ""));
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+
+    let ratio = numeric;
+
+    if (percent) {
+      ratio = numeric / 100;
+    } else if (ratio > 1) {
+      if (ratio <= 5 && !percent) {
+        // assume already ratio (e.g., 1.2)
+      } else if (ratio <= 100) {
+        ratio = ratio / 100;
+      } else if (ratio <= 1000) {
+        ratio = ratio / 1000;
+      } else {
+        ratio = ratio / 10000;
+      }
+    }
+
+    if (!options.clamp) {
+      return ratio;
+    }
+
+    return clamp01(ratio);
+  }
+
+  function registerPinDebugAPI() {
+    if (window.__geminiPinsDebugRegistered) return;
+    Object.defineProperty(window, "__geminiPinsDebugRegistered", {
+      value: true,
+      writable: false,
+      configurable: true
+    });
+    window.geminiPins = {
+      set: (items) => {
+        setFeedbackItems(Array.isArray(items) ? items : []);
+      },
+      clear: () => {
+        setFeedbackItems([]);
+      },
+      mock: () => {
+        setFeedbackItems(getMockFeedbackItems());
+      },
+      state: () => ({
+        feedbackItems: state.feedbackItems,
+        pinsBySlide: state.pinsBySlide
+      })
+    };
+    console.info('[Gemini Slides] Pin debug helpers available via window.geminiPins');
+  }
+
+  function regeneratePinsFromFeedback() {
+    state.pinsBySlide = {};
+    const items = Array.isArray(state.feedbackItems) ? state.feedbackItems : [];
+
+    items.forEach((item) => {
+      const anchors = Array.isArray(item.anchors) ? item.anchors : [];
+      anchors.forEach((anchor, index) => {
+        const normalized = normalizeAnchor(anchor);
+        if (!normalized) {
+          console.warn('[Gemini Slides] Anchor normalization failed for', anchor);
+          return;
+        }
+
+        const slidePage = normalized.slidePage || Number(anchor.slidePage || item.slidePage || item.slidePage);
+        if (!slidePage || Number.isNaN(slidePage)) return;
+
+        const pin = {
+          pinId: anchor.pinId || generatePinId(),
+          feedbackId: item.id,
+          slidePage,
+          position: normalized.position,
+          rect: normalized.rect,
+          anchorIndex: typeof anchor.anchorIndex === "number" ? anchor.anchorIndex : index,
+          source: anchor.source || "ai"
+        };
+
+        if (!state.pinsBySlide[slidePage]) {
+          state.pinsBySlide[slidePage] = [];
+        }
+        state.pinsBySlide[slidePage].push(pin);
+        debugLog('Pin generated:', {
+          pinId: pin.pinId,
+          slidePage: pin.slidePage,
+          position: pin.position,
+          rect: pin.rect,
+          hasRect: !!pin.rect
+        });
+      });
+    });
+
+    debugLog('pinsBySlide after regeneration:', state.pinsBySlide);
+    Object.values(state.pinsBySlide).forEach((pinList) => {
+      pinList.sort((a, b) => a.anchorIndex - b.anchorIndex);
+    });
+
+    updatePinModeBadge();
+    renderPinsForCurrentSlide();
+  }
+
+  function formatSlideLabel(anchors, fallbackSlidePage) {
+    const pages = new Set();
+    if (Array.isArray(anchors)) {
+      anchors.forEach((anchor) => {
+        const page = Number(anchor?.slidePage);
+        if (page && !Number.isNaN(page)) {
+          pages.add(page);
+        }
+      });
+    }
+    if ((!pages.size) && fallbackSlidePage) {
+      const fallback = Number(fallbackSlidePage);
+      if (!Number.isNaN(fallback)) {
+        pages.add(fallback);
+      }
+    }
+    if (!pages.size) {
+      return "位置情報なし";
+    }
+    return Array.from(pages)
+      .sort((a, b) => a - b)
+      .map((page) => `Slide ${page}`)
+      .join(", ");
+  }
+
+  function normalizeAnchor(anchor) {
+    if (!anchor) return null;
+    const result = {
+      position: null,
+      rect: null
+    };
+
+    if (anchor.rect) {
+      const rect = {
+        x: clamp01(anchor.rect.x),
+        y: clamp01(anchor.rect.y),
+        width: clamp01(anchor.rect.width),
+        height: clamp01(anchor.rect.height)
+      };
+      if (rect.width > 0 && rect.height > 0) {
+        result.rect = rect;
+        result.position = {
+          x: clamp01(rect.x + rect.width / 2),
+          y: clamp01(rect.y + rect.height / 2)
+        };
+      }
+    }
+
+    if (!result.position && anchor.position) {
+      result.position = {
+        x: clamp01(anchor.position.x),
+        y: clamp01(anchor.position.y)
+      };
+    }
+
+    if (!result.position) {
+      return null;
+    }
+
+    return result;
+  }
+
+  function clamp01(value) {
+    const number = Number(value);
+    if (Number.isNaN(number)) return 0;
+    return Math.min(1, Math.max(0, number));
+  }
+
+  function getAnchorsForFeedback(feedbackId) {
+    if (!feedbackId) return [];
+    const feedback = state.feedbackItems.find((item) => item.id === feedbackId);
+    return Array.isArray(feedback?.anchors) ? feedback.anchors : [];
+  }
+
+  function renderFeedbackList() {
+    if (!state.ui.feedbackList || !state.ui.feedbackEmpty) return;
+
+    const list = state.ui.feedbackList;
+    const emptyState = state.ui.feedbackEmpty;
+    const items = Array.isArray(state.feedbackItems) ? state.feedbackItems : [];
+
+    list.innerHTML = "";
+
+    if (!items.length) {
+      emptyState.hidden = false;
+      list.hidden = true;
+      updatePinModeBadge();
+      return;
+    }
+
+    emptyState.hidden = true;
+    list.hidden = false;
+
+    items.forEach((item, index) => {
+      const li = document.createElement("li");
+      li.className = "feedback-item";
+      li.dataset.feedbackId = item.id;
+
+      const anchors = Array.isArray(item.anchors) ? item.anchors : [];
+      const slideLabel = formatSlideLabel(anchors, item.slidePage);
+
+      if (isFeedbackPinned(item.id)) {
+        li.dataset.status = "pinned";
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "feedback-meta";
+      const orderSpan = document.createElement("span");
+      orderSpan.textContent = `指摘 ${index + 1}`;
+      const slideSpan = document.createElement("span");
+      slideSpan.textContent = slideLabel;
+      meta.append(orderSpan, slideSpan);
+
+      const title = document.createElement("div");
+      title.className = "feedback-title";
+      title.textContent = item.title || `指摘 ${index + 1}`;
+
+      const summary = document.createElement("p");
+      summary.className = "feedback-summary";
+      summary.textContent = item.summary || item.body || "";
+
+      const actions = document.createElement("div");
+      actions.className = "feedback-actions";
+
+      const focusButton = document.createElement("button");
+      focusButton.className = "button tertiary";
+      focusButton.type = "button";
+      focusButton.dataset.action = "focus";
+      focusButton.dataset.feedbackId = item.id;
+      focusButton.disabled = anchors.length === 0;
+      if (anchors.length === 0) {
+        focusButton.textContent = "位置情報なし";
+      } else if (anchors.length === 1) {
+        focusButton.textContent = "📍 スライドで表示";
+      } else {
+        focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
+      }
+
+      actions.append(focusButton);
+      li.append(meta, title, summary, actions);
+      list.appendChild(li);
+    });
+
+    highlightFeedback(state.pinMode.isActive
+      ? state.pinMode.feedbackId
+      : (state.openPinId ? findPinById(state.openPinId)?.feedbackId : null));
+
+    updateFeedbackListPinStates();
+    updatePinModeBadge();
+  }
+
+  function updateFeedbackListPinStates() {
+    if (!state.ui.feedbackList) return;
+    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
+    items.forEach((item) => {
+      const feedbackId = item.dataset.feedbackId;
+      const anchors = getAnchorsForFeedback(feedbackId);
+      const pinned = anchors.length > 0;
+      if (pinned) {
+        item.dataset.status = "pinned";
+      } else {
+        item.removeAttribute("data-status");
+      }
+      const focusButton = item.querySelector('[data-action="focus"]');
+      if (focusButton) {
+        focusButton.disabled = anchors.length === 0;
+        if (anchors.length === 0) {
+          focusButton.textContent = "位置情報なし";
+        } else if (anchors.length === 1) {
+          focusButton.textContent = "📍 スライドで表示";
+        } else {
+          focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
+        }
+      }
+    });
+  }
+
+  function handleFeedbackListClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const action = target.dataset.action;
+    const feedbackId = target.dataset.feedbackId;
+    if (!action || !feedbackId) return;
+
+    if (action === "focus") {
+      event.preventDefault();
+      focusFeedback(feedbackId);
+    }
+  }
+
+  function focusFeedback(feedbackId) {
+    if (!feedbackId) return;
+    const pins = findPinsByFeedback(feedbackId);
+    if (!pins.length) {
+      setOpenPin(null);
+      highlightFeedback(feedbackId, { scrollIntoView: true });
+      return;
+    }
+
+    const currentPage = getCurrentSlidePageNumber();
+    let targetPin = pins.find((pin) => pin.slidePage === currentPage);
+    if (!targetPin) {
+      targetPin = pins[0];
+    }
+
+    if (!targetPin) {
+      setOpenPin(null);
+      highlightFeedback(feedbackId, { scrollIntoView: true });
+      return;
+    }
+
+    if (targetPin.slidePage !== currentPage) {
+      // 別のスライドにピンがある場合、ユーザーに促す
+      highlightFeedback(feedbackId, { scrollIntoView: true });
+      showSlideMessage(targetPin.slidePage, `スライド ${targetPin.slidePage} を開くとピンが表示されます`, "info");
+    } else {
+      // 現在のスライドにピンがある場合、即座に表示
+      setOpenPin(targetPin.pinId, { scrollIntoView: true });
+    }
+  }
+
+  function enterPinMode(feedbackId) {
+    state.pinMode.isActive = true;
+    state.pinMode.feedbackId = feedbackId;
+
+    if (state.pinOverlay) {
+      state.pinOverlay.classList.add("pin-mode");
+    }
+
+    updatePinOverlayVisibility();
+    updatePinModeBadge();
+    updateFeedbackListPinStates();
+    highlightFeedback(feedbackId, { scrollIntoView: true });
+    updatePinOverlayBounds();
+  }
+
+  function exitPinMode(reason = "") {
+    if (!state.pinMode.isActive) return;
+    state.pinMode.isActive = false;
+    state.pinMode.feedbackId = null;
+
+    if (state.pinOverlay) {
+      state.pinOverlay.classList.remove("pin-mode");
+    }
+
+    updatePinOverlayVisibility();
+    updatePinModeBadge();
+    updateFeedbackListPinStates();
+
+    if (reason !== "placed") {
+      const openFeedbackId = state.openPinId ? findPinById(state.openPinId)?.feedbackId : null;
+      highlightFeedback(openFeedbackId);
+    }
+  }
+
+  function updatePinModeBadge() {
+    if (!state.ui.pinModeBadge) return;
+    if (state.pinMode.isActive) {
+      const feedback = state.feedbackItems.find((item) => item.id === state.pinMode.feedbackId);
+      state.ui.pinModeBadge.hidden = false;
+      state.ui.pinModeBadge.textContent = feedback
+        ? `ピン留め中: ${feedback.title || "指摘"}`
+        : "ピン留めモード";
+    } else {
+      const totalPins = Object.values(state.pinsBySlide || {}).reduce(
+        (sum, pinList) => sum + (Array.isArray(pinList) ? pinList.length : 0),
+        0
+      );
+      if (totalPins > 0) {
+        state.ui.pinModeBadge.hidden = false;
+        state.ui.pinModeBadge.textContent = `📍 ${totalPins}箇所ハイライト中`;
+      } else {
+        state.ui.pinModeBadge.hidden = true;
+      }
+    }
+  }
+
+  function handlePinKeydown(event) {
+    if (event.key === "Escape" && state.pinMode.isActive) {
+      event.preventDefault();
+      exitPinMode("escape");
+    }
+  }
+
+  function handlePinOverlayClick(event) {
+    if (!state.pinMode.isActive || !state.pinOverlayCanvas || !state.pinMode.feedbackId) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = state.pinOverlayCanvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+
+    const xClamped = Math.max(0.02, Math.min(0.98, x));
+    const yClamped = Math.max(0.02, Math.min(0.98, y));
+
+    const slidePage = getCurrentSlidePageNumber();
+    const newPin = addPinAt(state.pinMode.feedbackId, slidePage, { x: xClamped, y: yClamped });
+    renderPinsForCurrentSlide();
+    setOpenPin(newPin.pinId, { scrollIntoView: true });
+    exitPinMode("placed");
+  }
+
+  function addPinAt(feedbackId, slidePage, position) {
+    const pin = {
+      pinId: generatePinId(),
+      feedbackId,
+      slidePage,
+      position: { x: position.x, y: position.y },
+      createdAt: new Date().toISOString()
+    };
+
+    if (!state.pinsBySlide[slidePage]) {
+      state.pinsBySlide[slidePage] = [];
+    }
+    state.pinsBySlide[slidePage].push(pin);
+    return pin;
+  }
+
+  function renderPinsForCurrentSlide() {
+    if (!state.pinOverlayPins) return;
+
+    updatePinOverlayBounds();
+
+    const slideIndex = getActiveSlideIndex();
+    const slidePage = slideIndex >= 0 ? slideIndex + 1 : 1;
+
+    const pins = state.pinsBySlide[slidePage] || [];
+    debugLog('Rendering pins for slide', slidePage, pins);
+    state.pinOverlayPins.innerHTML = "";
+    if (state.pinOverlayTargets) {
+      state.pinOverlayTargets.innerHTML = "";
+    }
+
+    pins.forEach((pin, index) => {
+      if (state.pinOverlayTargets && pin.rect) {
+        const target = document.createElement("div");
+        target.className = "gemini-pin-overlay__target";
+        target.dataset.pinId = pin.pinId;
+        target.style.left = `${(pin.rect.x || 0) * 100}%`;
+        target.style.top = `${(pin.rect.y || 0) * 100}%`;
+        target.style.width = `${(pin.rect.width || 0) * 100}%`;
+        target.style.height = `${(pin.rect.height || 0) * 100}%`;
+
+        debugLog(`Pin ${index + 1} target rectangle:`, {
+          left: target.style.left,
+          top: target.style.top,
+          width: target.style.width,
+          height: target.style.height,
+          rectData: pin.rect
+        });
+
+        if (state.openPinId === pin.pinId) {
+          target.classList.add("is-open");
+        }
+        state.pinOverlayTargets.appendChild(target);
+      }
+
+      const pinButton = document.createElement("button");
+      pinButton.type = "button";
+      pinButton.className = "gemini-pin";
+      pinButton.dataset.pinId = pin.pinId;
+      pinButton.dataset.feedbackId = pin.feedbackId;
+
+      // ピンの位置: 矩形がある場合は矩形の上部中央、なければposition座標を使用
+      let pinX, pinY;
+
+      // 矩形が存在し、かつ有効な値を持つ場合
+      if (pin.rect && typeof pin.rect.x === 'number' && typeof pin.rect.y === 'number') {
+        // 矩形の上部中央に配置
+        pinX = (pin.rect.x || 0) + (pin.rect.width || 0) / 2;
+        pinY = (pin.rect.y || 0);
+        debugLog(`Pin ${index + 1} using rect:`, {
+          rect: pin.rect,
+          calculatedX: pinX,
+          calculatedY: pinY
+        });
+      } else {
+        // フォールバック: position座標
+        pinX = pin.position?.x || 0;
+        pinY = pin.position?.y || 0;
+        debugLog(`Pin ${index + 1} using position (no valid rect):`, {
+          hasRect: !!pin.rect,
+          rect: pin.rect,
+          position: pin.position,
+          calculatedX: pinX,
+          calculatedY: pinY
+        });
+      }
+
+      pinButton.style.left = `${pinX * 100}%`;
+      pinButton.style.top = `${pinY * 100}%`;
+
+      debugLog(`Pin ${index + 1} final DOM styles:`, {
+        left: pinButton.style.left,
+        top: pinButton.style.top,
+        pinXRaw: pinX,
+        pinYRaw: pinY
+      });
+
+      if (state.openPinId === pin.pinId) {
+        pinButton.classList.add("is-open");
+      }
+
+      const icon = document.createElement("span");
+      icon.className = "gemini-pin__icon";
+      icon.textContent = `📍${index + 1}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "gemini-pin__bubble";
+
+      const title = document.createElement("span");
+      title.className = "gemini-pin__bubble-title";
+      const feedback = state.feedbackItems.find((item) => item.id === pin.feedbackId);
+      title.textContent = feedback?.title || `指摘 ${index + 1}`;
+
+      const body = document.createElement("p");
+      body.className = "gemini-pin__bubble-body";
+      body.textContent = feedback?.summary || feedback?.body || "";
+
+      bubble.append(title, body);
+      pinButton.append(icon, bubble);
+      state.pinOverlayPins.appendChild(pinButton);
+    });
+
+    updatePinOverlayVisibility();
+    updateFeedbackListPinStates();
+  }
+
+  function handlePinContainerClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const pinElement = target.closest(".gemini-pin");
+    if (!pinElement) return;
+
+    const pinId = pinElement.dataset.pinId;
+    if (!pinId) return;
+
+    if (state.openPinId === pinId) {
+      setOpenPin(null);
+    } else {
+      setOpenPin(pinId, { scrollIntoView: false });
+    }
+  }
+
+  function setOpenPin(pinId, options = {}) {
+    state.openPinId = pinId || null;
+
+    if (state.pinOverlayPins) {
+      const pinButtons = state.pinOverlayPins.querySelectorAll(".gemini-pin");
+      pinButtons.forEach((button) => {
+        button.classList.toggle("is-open", button.dataset.pinId === state.openPinId);
+      });
+    }
+    if (state.pinOverlayTargets) {
+      const targetRects = state.pinOverlayTargets.querySelectorAll(".gemini-pin-overlay__target");
+      targetRects.forEach((target) => {
+        target.classList.toggle("is-open", target.dataset.pinId === state.openPinId);
+      });
+    }
+
+    const pin = pinId ? findPinById(pinId) : null;
+    const feedbackId = pin?.feedbackId || null;
+
+    highlightFeedback(feedbackId, options);
+    updateFeedbackListPinStates();
+  }
+
+  function highlightFeedback(feedbackId, options = {}) {
+    if (!state.ui.feedbackList) return;
+    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
+    items.forEach((item) => {
+      const isTarget = feedbackId && item.dataset.feedbackId === feedbackId;
+      item.classList.toggle("is-highlighted", Boolean(isTarget));
+      if (isTarget && options.scrollIntoView) {
+        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    });
+    if (!feedbackId) {
+      items.forEach((item) => item.classList.remove("is-highlighted"));
+    }
+  }
+
+  function updatePinOverlayBounds() {
+    if (!state.pinOverlay) return;
+    const rect = findSlideViewportRect();
+    if (!rect) {
+      state.pinOverlay.style.opacity = "0";
+      state.pinOverlay.classList.remove("is-visible");
+      return;
+    }
+
+    state.pinOverlay.style.top = `${rect.top + window.scrollY}px`;
+    state.pinOverlay.style.left = `${rect.left + window.scrollX}px`;
+    state.pinOverlay.style.width = `${rect.width}px`;
+    state.pinOverlay.style.height = `${rect.height}px`;
+
+    updatePinOverlayVisibility();
+  }
+
+  function updatePinOverlayVisibility() {
+    if (!state.pinOverlay) return;
+    const slidePage = getCurrentSlidePageNumber();
+    const pins = state.pinsBySlide[slidePage] || [];
+    const shouldShow = state.pinMode.isActive || pins.length > 0;
+    console.log('[Gemini Slides] Overlay visibility check', {
+      slidePage,
+      pinCount: pins.length,
+      shouldShow,
+      pinMode: state.pinMode.isActive
+    });
+    state.pinOverlay.classList.toggle("is-visible", shouldShow);
+    state.pinOverlay.classList.toggle("pin-mode", state.pinMode.isActive);
+  }
+
+  function findSlideViewportRect() {
+    const selectors = [
+      "#punch-app .punch-viewer-content svg",
+      "#punch-app .punch-viewer-content canvas",
+      ".punch-viewer-content svg",
+      ".punch-viewer-content canvas",
+      "#canvas",
+      "#canvas-container svg",
+      "#canvas-container canvas",
+      ".punch-present-canvas svg",
+      ".punch-present-canvas canvas"
+    ];
+
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 200 && rect.height > 150) {
+        return rect;
+      }
+    }
+
+    const fallbackSvg = Array.from(document.querySelectorAll("svg")).find(isMainSlideSVG);
+    if (fallbackSvg) {
+      const rect = fallbackSvg.getBoundingClientRect();
+      if (rect.width > 200 && rect.height > 150) {
+        return rect;
+      }
+    }
+
+    return null;
+  }
+
+  function startPinSlideWatcher() {
+    stopPinSlideWatcher();
+    state.pinSlideWatcher = window.setInterval(checkSlideIndexForPins, 800);
+    checkSlideIndexForPins();
+  }
+
+  function stopPinSlideWatcher() {
+    if (state.pinSlideWatcher) {
+      clearInterval(state.pinSlideWatcher);
+      state.pinSlideWatcher = null;
+    }
+  }
+
+  function checkSlideIndexForPins() {
+    const currentIndex = getActiveSlideIndex();
+    if (currentIndex === state.lastRenderedSlideIndex) {
+      if (state.pinMode.isActive) {
+        updatePinOverlayBounds();
+      }
+      return;
+    }
+
+    state.lastRenderedSlideIndex = currentIndex;
+    renderPinsForCurrentSlide();
+  }
+
+  function findPinById(pinId) {
+    if (!pinId) return null;
+    for (const pins of Object.values(state.pinsBySlide)) {
+      const found = pins?.find((pin) => pin.pinId === pinId);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  function findPinsByFeedback(feedbackId) {
+    if (!feedbackId) return [];
+    const pins = [];
+    for (const slidePins of Object.values(state.pinsBySlide)) {
+      slidePins?.forEach((pin) => {
+        if (pin.feedbackId === feedbackId) {
+          pins.push(pin);
+        }
+      });
+    }
+    return pins;
+  }
+
+  function isFeedbackPinned(feedbackId) {
+    if (!feedbackId) return false;
+    return findPinsByFeedback(feedbackId).length > 0;
+  }
+
+  function showSlideMessage(slidePage, message, variant = "info") {
+    // サイドパネルにメッセージを表示
+    if (state.ui.result) {
+      const prevContent = state.ui.result.textContent;
+      const prevClass = state.ui.result.className;
+
+      const classMap = {
+        error: "status error",
+        info: "status",
+        success: "status success"
+      };
+
+      state.ui.result.className = classMap[variant] || "status";
+      state.ui.result.textContent = message;
+
+      // 5秒後に元に戻す
+      setTimeout(() => {
+        state.ui.result.className = prevClass;
+        state.ui.result.textContent = prevContent;
+      }, 5000);
+    }
+  }
+
+  function getCurrentSlidePageNumber() {
+    const index = getActiveSlideIndex();
+    return index >= 0 ? index + 1 : 1;
   }
 
   /**
