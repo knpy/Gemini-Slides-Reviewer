@@ -18,7 +18,7 @@
   // ========================================
   // デバッグ設定
   // ========================================
-  const DEBUG = true;  // 開発中はtrue、本番はfalse
+  const DEBUG = false;  // 開発中はtrue、本番はfalse
   const debugLog = (...args) => {
     if (DEBUG) {
       console.log('[Gemini Slides DEBUG]', ...args);
