@@ -3975,7 +3975,7 @@ ${rawText}`;
   // Phase 7: ピン留めフィードバック UI
   // ========================================
 
-  function initializePinFeature() {
+  async function initializePinFeature() {
     if (state.pinFeatureInitialized) {
       renderFeedbackList();
       renderPinsForCurrentSlide();
@@ -4000,14 +4000,43 @@ ${rawText}`;
     startPinSlideWatcher();
     registerPinDebugAPI();
 
-    if (shouldLoadPinMockData()) {
-      setFeedbackItems(getMockFeedbackItems());
-    } else if (!state.feedbackItems.length) {
-      setFeedbackItems([]);
-    } else {
-      regeneratePinsFromFeedback();
-      renderFeedbackList();
-      updatePinOverlayVisibility();
+    // Phase 7-2A: ストレージから復元
+    const presentationId = extractPresentationId(window.location.href);
+    let restoredFromStorage = false;
+
+    if (presentationId) {
+      const savedPins = await loadPinsFromStorage(presentationId);
+      const savedFeedback = await loadFeedbackFromStorage(presentationId);
+
+      if (Object.keys(savedPins).length > 0 || savedFeedback.length > 0) {
+        // ストレージにデータがある場合は復元
+        if (Object.keys(savedPins).length > 0) {
+          state.pinsBySlide = savedPins;
+          console.log('[Pins] Restored from storage:', Object.keys(savedPins).length, 'slides');
+        }
+
+        if (savedFeedback.length > 0) {
+          state.feedbackItems = savedFeedback;
+          console.log('[Feedback] Restored from storage:', savedFeedback.length, 'items');
+        }
+
+        restoredFromStorage = true;
+        renderFeedbackList();
+        updatePinOverlayVisibility();
+      }
+    }
+
+    // ストレージから復元しなかった場合のみ、初期化処理を実行
+    if (!restoredFromStorage) {
+      if (shouldLoadPinMockData()) {
+        setFeedbackItems(getMockFeedbackItems());
+      } else if (!state.feedbackItems.length) {
+        setFeedbackItems([]);
+      } else {
+        regeneratePinsFromFeedback();
+        renderFeedbackList();
+        updatePinOverlayVisibility();
+      }
     }
 
     updatePinOverlayBounds();
@@ -4775,6 +4804,83 @@ ${rawText}`;
     console.info('[Gemini Slides] Pin debug helpers available via window.geminiPins');
   }
 
+  /**
+   * Phase 7-2A: ピンデータをストレージに保存
+   */
+  async function savePinsToStorage(presentationId, pinsBySlide) {
+    const key = `pins:${presentationId}`;
+    const data = {
+      version: "1.0",
+      presentationId,
+      lastModified: new Date().toISOString(),
+      pins: pinsBySlide
+    };
+
+    try {
+      await chrome.storage.local.set({ [key]: data });
+      console.log('[Pins] Saved to storage:', key, 'Total slides:', Object.keys(pinsBySlide).length);
+    } catch (error) {
+      console.error('[Pins] Failed to save:', error);
+    }
+  }
+
+  /**
+   * Phase 7-2A: ストレージからピンデータを読み込み
+   */
+  async function loadPinsFromStorage(presentationId) {
+    const key = `pins:${presentationId}`;
+
+    try {
+      const result = await chrome.storage.local.get(key);
+      if (result[key]) {
+        console.log('[Pins] Loaded from storage:', key, 'Last modified:', result[key].lastModified);
+        return result[key].pins || {};
+      }
+    } catch (error) {
+      console.error('[Pins] Failed to load:', error);
+    }
+
+    return {};
+  }
+
+  /**
+   * Phase 7-2A: フィードバックアイテムをストレージに保存
+   */
+  async function saveFeedbackToStorage(presentationId, feedbackItems) {
+    const key = `feedback:${presentationId}`;
+    const data = {
+      version: "1.0",
+      items: feedbackItems,
+      lastModified: new Date().toISOString()
+    };
+
+    try {
+      await chrome.storage.local.set({ [key]: data });
+      console.log('[Feedback] Saved to storage:', key, 'Total items:', feedbackItems.length);
+    } catch (error) {
+      console.error('[Feedback] Failed to save:', error);
+    }
+  }
+
+  /**
+   * Phase 7-2A: ストレージからフィードバックアイテムを読み込み
+   */
+  async function loadFeedbackFromStorage(presentationId) {
+    const key = `feedback:${presentationId}`;
+
+    try {
+      const result = await chrome.storage.local.get(key);
+      if (result[key]) {
+        console.log('[Feedback] Loaded from storage:', key, 'Last modified:', result[key].lastModified);
+        return result[key].items || [];
+      }
+    } catch (error) {
+      console.error('[Feedback] Failed to load:', error);
+    }
+
+    return [];
+  }
+
   function regeneratePinsFromFeedback() {
     state.pinsBySlide = {};
     const items = Array.isArray(state.feedbackItems) ? state.feedbackItems : [];
@@ -4822,6 +4928,13 @@ ${rawText}`;
 
     updatePinModeBadge();
     renderPinsForCurrentSlide();
+
+    // Phase 7-2A: 自動保存
+    const presentationId = extractPresentationId(window.location.href);
+    if (presentationId) {
+      savePinsToStorage(presentationId, state.pinsBySlide);
+      saveFeedbackToStorage(presentationId, state.feedbackItems);
+    }
   }
 
   function formatSlideLabel(anchors, fallbackSlidePage) {
