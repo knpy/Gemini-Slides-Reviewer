@@ -111,6 +111,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Phase 6: キックオフURLからテキストを抽出
+  if (message?.type === "EXTRACT_FROM_KICKOFF_URL") {
+    (async () => {
+      try {
+        console.log('[Background] Extracting from kickoff URL:', message.url);
+        const extractedText = await extractTextFromUrl(message.url);
+        sendResponse({ ok: true, text: extractedText });
+      } catch (error) {
+        console.error('[Background] Failed to extract from URL:', error);
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    })();
+    return true;
+  }
+
+  // Phase 6: Gemini APIでコンテキストを抽出
+  if (message?.type === "GEMINI_EXTRACT_CONTEXT") {
+    (async () => {
+      try {
+        console.log('[Background] Extracting context with Gemini API');
+        const result = await runGeminiExtractContext(message.prompt);
+        sendResponse({ ok: true, result });
+      } catch (error) {
+        console.error('[Background] Failed to extract context:', error);
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    })();
+    return true;
+  }
+
   return undefined;
 });
 
@@ -447,5 +483,178 @@ async function loadRuntimeConfig() {
   } catch (error) {
     // Non-blocking: fall back to empty config.
     console.warn("Gemini Slides Reviewer: Failed to load runtime config.", error);
+  }
+}
+
+/**
+ * Phase 6: Gemini APIでコンテキストを抽出（非ストリーミング）
+ */
+async function runGeminiExtractContext(prompt) {
+  const apiKey = await resolveApiKey();
+  if (!prompt) {
+    throw new Error("Prompt is required");
+  }
+
+  console.log('[Gemini API] Extracting context with prompt');
+
+  const response = await fetch(`${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }]
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini API responded with ${response.status}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error("Gemini API returned an empty response.");
+  }
+
+  return {
+    text: text,
+    model: GEMINI_MODEL,
+    timestamp: Date.now()
+  };
+}
+
+/**
+ * Phase 6: URLからテキストを抽出
+ * Google SlidesのURLを開いて、スライドのテキストコンテンツを抽出します
+ */
+async function extractTextFromUrl(url) {
+  console.log('[Phase 6] Opening URL in background tab:', url);
+
+  // 新しいタブを作成（非表示）
+  const tab = await chrome.tabs.create({
+    url: url,
+    active: false
+  });
+
+  console.log('[Phase 6] Tab created:', tab.id);
+
+  // タブが完全に読み込まれるまで待つ
+  await waitForTabLoad(tab.id);
+
+  console.log('[Phase 6] Tab loaded, waiting for slides to render...');
+
+  // スライドがレンダリングされるまで少し待つ
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  try {
+    // コンテンツスクリプトを注入してテキストを抽出
+    console.log('[Phase 6] Injecting extraction script...');
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: extractSlidesText
+    });
+
+    console.log('[Phase 6] Extraction complete:', results);
+
+    // タブを閉じる
+    await chrome.tabs.remove(tab.id);
+
+    if (results && results[0] && results[0].result) {
+      return results[0].result;
+    } else {
+      throw new Error('テキストの抽出に失敗しました');
+    }
+  } catch (error) {
+    // エラーが発生した場合もタブを閉じる
+    try {
+      await chrome.tabs.remove(tab.id);
+    } catch (closeError) {
+      console.warn('[Phase 6] Failed to close tab:', closeError);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Phase 6: タブの読み込み完了を待つ
+ */
+function waitForTabLoad(tabId) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('タブの読み込みがタイムアウトしました'));
+    }, 30000); // 30秒でタイムアウト
+
+    const listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/**
+ * Phase 6: Google Slidesからテキストを抽出する関数（タブ内で実行される）
+ * この関数はタブのコンテキストで実行されます
+ */
+function extractSlidesText() {
+  console.log('[Extract] Starting text extraction from Google Slides...');
+
+  try {
+    // Google Slidesのテキスト要素を探す
+    const textElements = [];
+
+    // スライドのタイトルを取得
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+      textElements.push(`タイトル: ${titleElement.textContent}`);
+    }
+
+    // すべてのテキストコンテンツを取得
+    // Google Slidesは様々な要素でテキストを表示するため、複数のセレクタを試す
+    const selectors = [
+      '.docs-text-paragraph',
+      '.docs-text',
+      '[role="textbox"]',
+      '.sketchy-text-content-wrapper',
+      '.sketchy-text-content'
+    ];
+
+    const foundTexts = new Set(); // 重複を避けるためにSetを使用
+
+    selectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(el => {
+        const text = el.textContent?.trim();
+        if (text && text.length > 0) {
+          foundTexts.add(text);
+        }
+      });
+    });
+
+    // 見つかったテキストを配列に変換
+    textElements.push(...Array.from(foundTexts));
+
+    console.log('[Extract] Found', textElements.length, 'text elements');
+
+    if (textElements.length === 0) {
+      return 'テキストが見つかりませんでした。スライドが読み込まれているか確認してください。';
+    }
+
+    return textElements.join('\n\n');
+  } catch (error) {
+    console.error('[Extract] Extraction error:', error);
+    return `エラー: ${error.message}`;
   }
 }
