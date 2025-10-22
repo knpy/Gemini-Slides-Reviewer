@@ -117,7 +117,10 @@
     state.ui.addPromptButton?.addEventListener("click", addNewPrompt);
     state.ui.closeButton?.addEventListener("click", togglePanel);
     state.ui.openButton?.addEventListener("click", togglePanel);
-    state.ui.feedbackFloatingButton?.addEventListener("click", toggleFeedbackPopup);
+    state.ui.feedbackFloatingButton?.addEventListener("click", (e) => {
+      e.stopPropagation(); // Prevent event from bubbling to buttonGroup
+      toggleFeedbackPopup();
+    });
     state.ui.feedbackPopupList?.addEventListener("click", handleFeedbackPopupClick);
 
     // Initialize draggable functionality for feedback button group
@@ -1062,9 +1065,6 @@
           font-size: 11px;
         }
       </style>
-      <button class=\"gemini-floating-button\" aria-haspopup=\"true\" aria-label=\"Gemini check\">
-        <img id=\"gemini-icon-img\" src=\"\" alt=\"Gemini icon\" />
-      </button>
       <div class=\"feedback-button-group\">
         <img id=\"gemini-icon-large\" src=\"\" alt=\"Gemini icon\" class=\"gemini-icon-large\" />
         <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"AIからの指摘を表示\">
@@ -1188,7 +1188,7 @@
   }
 
   function bindUI() {
-    state.ui.openButton = shadowRoot.querySelector(".gemini-floating-button");
+    state.ui.openButton = shadowRoot.querySelector(".feedback-button-group");
     state.ui.panel = shadowRoot.querySelector(".gemini-panel");
     state.ui.closeButton = shadowRoot.querySelector("header button");
     state.ui.promptSelect = shadowRoot.querySelector("#gemini-prompt-select");
