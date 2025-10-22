@@ -120,6 +120,11 @@
     state.ui.feedbackFloatingButton?.addEventListener("click", toggleFeedbackPopup);
     state.ui.feedbackPopupList?.addEventListener("click", handleFeedbackPopupClick);
 
+    // Initialize draggable functionality for feedback button
+    if (state.ui.feedbackFloatingButton) {
+      initializeDraggableFeedbackButton(state.ui.feedbackFloatingButton);
+    }
+
     // Close popup when clicking outside
     document.addEventListener("click", (event) => {
       if (!shadowRoot.contains(event.target)) return;
@@ -230,14 +235,19 @@
           align-items: center;
           justify-content: center;
           box-shadow: 0 6px 16px rgba(138,180,248,0.3);
-          cursor: pointer;
+          cursor: grab;
           z-index: 2147483646;
           transition: transform 0.2s ease, box-shadow 0.2s ease;
           font-size: 24px;
+          user-select: none;
+          -webkit-user-select: none;
         }
         .feedback-floating-button:hover {
           transform: scale(1.05);
           box-shadow: 0 8px 20px rgba(138,180,248,0.4);
+        }
+        .feedback-floating-button:active {
+          cursor: grabbing;
         }
         .feedback-popup {
           position: fixed;
@@ -4316,6 +4326,91 @@ ${rawText}`;
 #gemini-pin-overlay .gemini-pin-overlay__hint button:hover {
   background: rgba(95,99,104,0.8);
 }
+
+/* 一時的な吹き出しのスタイル */
+.gemini-temp-bubble {
+  position: absolute;
+  min-width: 200px;
+  max-width: 320px;
+  background: rgba(32,33,36,0.95);
+  color: #e8eaed;
+  border: 1px solid rgba(138,180,248,0.4);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  pointer-events: auto;
+  z-index: 10;
+  animation: bubbleFadeIn 0.3s ease;
+}
+
+@keyframes bubbleFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gemini-temp-bubble-content {
+  padding: 16px;
+  position: relative;
+}
+
+.gemini-temp-bubble-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8ab4f8;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.gemini-temp-bubble-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e8eaed;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.gemini-temp-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #9aa0a6;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.gemini-temp-bubble-close:hover {
+  color: #e8eaed;
+}
+
+/* 一時的なハイライト矩形 */
+.gemini-temp-highlight {
+  position: absolute;
+  border: 2px solid rgba(138,180,248,0.8);
+  background: rgba(138,180,248,0.15);
+  box-shadow: 0 8px 20px rgba(138,180,248,0.3);
+  border-radius: 8px;
+  pointer-events: none;
+  animation: highlightPulse 2s ease infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
 `;
     document.head.appendChild(style);
   }
@@ -5128,6 +5223,133 @@ ${rawText}`;
     popup.classList.toggle("visible");
   }
 
+  function initializeDraggableFeedbackButton(button) {
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let buttonStartX = 0;
+    let buttonStartY = 0;
+    let hasMoved = false;
+
+    // Load saved position from localStorage
+    const savedPosition = loadFeedbackButtonPosition();
+    if (savedPosition) {
+      button.style.right = 'auto';
+      button.style.bottom = 'auto';
+      button.style.left = `${savedPosition.x}px`;
+      button.style.top = `${savedPosition.y}px`;
+    }
+
+    const handleMouseDown = (e) => {
+      // Only allow dragging with left mouse button
+      if (e.button !== 0) return;
+
+      isDragging = true;
+      hasMoved = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+
+      const rect = button.getBoundingClientRect();
+      buttonStartX = rect.left;
+      buttonStartY = rect.top;
+
+      button.style.cursor = 'grabbing';
+      button.style.transition = 'none';
+      e.preventDefault();
+    };
+
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+
+      // Mark as moved if dragged more than 5px
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        hasMoved = true;
+      }
+
+      const newX = buttonStartX + deltaX;
+      const newY = buttonStartY + deltaY;
+
+      // Constrain to viewport bounds
+      const maxX = window.innerWidth - button.offsetWidth;
+      const maxY = window.innerHeight - button.offsetHeight;
+
+      const constrainedX = Math.max(0, Math.min(newX, maxX));
+      const constrainedY = Math.max(0, Math.min(newY, maxY));
+
+      button.style.right = 'auto';
+      button.style.bottom = 'auto';
+      button.style.left = `${constrainedX}px`;
+      button.style.top = `${constrainedY}px`;
+
+      e.preventDefault();
+    };
+
+    const handleMouseUp = (e) => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      button.style.cursor = 'pointer';
+      button.style.transition = '';
+
+      // Save position to localStorage
+      const rect = button.getBoundingClientRect();
+      saveFeedbackButtonPosition({ x: rect.left, y: rect.top });
+
+      // Prevent click event if button was dragged
+      if (hasMoved) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Add a temporary flag to prevent click
+        button.dataset.justDragged = 'true';
+        setTimeout(() => {
+          delete button.dataset.justDragged;
+        }, 100);
+      }
+    };
+
+    // Prevent click when just dragged
+    const handleClick = (e) => {
+      if (button.dataset.justDragged === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    button.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    button.addEventListener('click', handleClick, true);
+
+    // Cleanup function
+    return () => {
+      button.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      button.removeEventListener('click', handleClick, true);
+    };
+  }
+
+  function saveFeedbackButtonPosition(position) {
+    try {
+      localStorage.setItem('gemini-feedback-button-position', JSON.stringify(position));
+    } catch (error) {
+      console.warn('Failed to save feedback button position:', error);
+    }
+  }
+
+  function loadFeedbackButtonPosition() {
+    try {
+      const saved = localStorage.getItem('gemini-feedback-button-position');
+      return saved ? JSON.parse(saved) : null;
+    } catch (error) {
+      console.warn('Failed to load feedback button position:', error);
+      return null;
+    }
+  }
+
   function handleFeedbackPopupClick(event) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
@@ -5138,11 +5360,138 @@ ${rawText}`;
     const feedbackId = item.dataset.feedbackId;
     if (!feedbackId) return;
 
-    // Close popup and focus feedback
+    // Close popup
     if (state.ui.feedbackPopup?.classList.contains("visible")) {
       toggleFeedbackPopup();
     }
-    focusFeedback(feedbackId);
+
+    // Show temporary bubble for clicked feedback only
+    showTemporaryFeedbackBubble(feedbackId);
+  }
+
+  function showTemporaryFeedbackBubble(feedbackId) {
+    if (!feedbackId) return;
+
+    // 既存の一時的な吹き出しを削除
+    const existingBubble = document.getElementById("gemini-temp-feedback-bubble");
+    if (existingBubble) {
+      existingBubble.remove();
+    }
+
+    // フィードバックアイテムを取得
+    const feedback = state.feedbackItems.find((item) => item.id === feedbackId);
+    if (!feedback) return;
+
+    // アンカー情報を取得
+    const anchors = Array.isArray(feedback.anchors) ? feedback.anchors : [];
+    if (anchors.length === 0) {
+      console.log('No anchors for feedback:', feedbackId);
+      return;
+    }
+
+    const anchor = anchors[0]; // 最初のアンカーを使用
+    const targetSlide = anchor.slidePage;
+
+    // スライドに移動
+    const currentSlide = getCurrentSlidePageNumber();
+    if (currentSlide !== targetSlide) {
+      navigateToSlide(targetSlide);
+      // スライド移動後に少し待ってから吹き出しを表示
+      setTimeout(() => {
+        renderTemporaryBubble(feedback, anchor);
+      }, 500);
+    } else {
+      renderTemporaryBubble(feedback, anchor);
+    }
+  }
+
+  function renderTemporaryBubble(feedback, anchor) {
+    if (!state.pinOverlay || !anchor.rect) return;
+
+    updatePinOverlayBounds();
+
+    // 一時的な吹き出しを作成
+    const bubble = document.createElement("div");
+    bubble.id = "gemini-temp-feedback-bubble";
+    bubble.className = "gemini-temp-bubble";
+
+    // 矩形の位置を計算
+    const rectX = (anchor.rect.x || 0) + (anchor.rect.width || 0) / 2;
+    const rectY = (anchor.rect.y || 0);
+
+    // 吹き出しの位置を自動計算
+    const bubblePos = calculateBubblePosition(rectX, rectY);
+
+    // 吹き出しのスタイルを設定
+    bubble.style.position = "absolute";
+    bubble.style.left = `${rectX * 100}%`;
+    bubble.style.top = `${rectY * 100}%`;
+    bubble.style.transform = getBubbleTransform(bubblePos.position);
+    bubble.dataset.position = bubblePos.position;
+    bubble.dataset.arrowClass = bubblePos.arrowClass;
+
+    // コンテンツを作成
+    const content = document.createElement("div");
+    content.className = "gemini-temp-bubble-content";
+
+    const title = document.createElement("div");
+    title.className = "gemini-temp-bubble-title";
+    title.textContent = feedback.title || "フィードバック";
+
+    const body = document.createElement("div");
+    body.className = "gemini-temp-bubble-body";
+    body.textContent = feedback.summary || feedback.body || "";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "gemini-temp-bubble-close";
+    closeBtn.textContent = "×";
+    closeBtn.onclick = () => bubble.remove();
+
+    content.append(title, body, closeBtn);
+    bubble.appendChild(content);
+
+    // ハイライト矩形を作成
+    if (state.pinOverlayTargets && anchor.rect) {
+      const highlight = document.createElement("div");
+      highlight.className = "gemini-temp-highlight";
+      highlight.style.left = `${(anchor.rect.x || 0) * 100}%`;
+      highlight.style.top = `${(anchor.rect.y || 0) * 100}%`;
+      highlight.style.width = `${(anchor.rect.width || 0) * 100}%`;
+      highlight.style.height = `${(anchor.rect.height || 0) * 100}%`;
+      state.pinOverlayTargets.appendChild(highlight);
+
+      // 5秒後に削除
+      setTimeout(() => {
+        highlight.remove();
+      }, 5000);
+    }
+
+    state.pinOverlay.appendChild(bubble);
+
+    // 5秒後に自動的に削除
+    setTimeout(() => {
+      bubble.remove();
+    }, 5000);
+
+    // オーバーレイを表示
+    if (state.pinOverlay) {
+      state.pinOverlay.classList.add("is-visible");
+    }
+  }
+
+  function getBubbleTransform(position) {
+    switch (position) {
+      case "right":
+        return "translate(12px, -50%)";
+      case "left":
+        return "translate(calc(-100% - 12px), -50%)";
+      case "top":
+        return "translate(-50%, calc(-100% - 12px))";
+      case "bottom":
+        return "translate(-50%, 12px)";
+      default:
+        return "translate(12px, -50%)";
+    }
   }
 
   function renderFeedbackPopup() {
@@ -5352,6 +5701,7 @@ ${rawText}`;
   };
 
   function renderPinsForCurrentSlide() {
+    // ピン表示を完全に無効化（ポップアップリストのみ使用）
     if (!state.pinOverlayPins) return;
 
     updatePinOverlayBounds();
@@ -5360,105 +5710,15 @@ ${rawText}`;
     const slidePage = slideIndex >= 0 ? slideIndex + 1 : 1;
 
     const pins = state.pinsBySlide[slidePage] || [];
-    debugLog('Rendering pins for slide', slidePage, pins);
+    debugLog('Pins exist for slide', slidePage, pins.length, 'but not rendering them (hidden by design)');
+
+    // ピンとターゲットを非表示に
     state.pinOverlayPins.innerHTML = "";
     if (state.pinOverlayTargets) {
       state.pinOverlayTargets.innerHTML = "";
     }
 
-    pins.forEach((pin, index) => {
-      if (state.pinOverlayTargets && pin.rect) {
-        const target = document.createElement("div");
-        target.className = "gemini-pin-overlay__target";
-        target.dataset.pinId = pin.pinId;
-        target.style.left = `${(pin.rect.x || 0) * 100}%`;
-        target.style.top = `${(pin.rect.y || 0) * 100}%`;
-        target.style.width = `${(pin.rect.width || 0) * 100}%`;
-        target.style.height = `${(pin.rect.height || 0) * 100}%`;
-
-        debugLog(`Pin ${index + 1} target rectangle:`, {
-          left: target.style.left,
-          top: target.style.top,
-          width: target.style.width,
-          height: target.style.height,
-          rectData: pin.rect
-        });
-
-        if (state.openPinId === pin.pinId) {
-          target.classList.add("is-open");
-        }
-        state.pinOverlayTargets.appendChild(target);
-      }
-
-      const pinButton = document.createElement("button");
-      pinButton.type = "button";
-      pinButton.className = "gemini-pin";
-      pinButton.dataset.pinId = pin.pinId;
-      pinButton.dataset.feedbackId = pin.feedbackId;
-
-      // ピンの位置: 矩形がある場合は矩形の上部中央、なければposition座標を使用
-      let pinX, pinY;
-
-      // 矩形が存在し、かつ有効な値を持つ場合
-      if (pin.rect && typeof pin.rect.x === 'number' && typeof pin.rect.y === 'number') {
-        // 矩形の上部中央に配置
-        pinX = (pin.rect.x || 0) + (pin.rect.width || 0) / 2;
-        pinY = (pin.rect.y || 0);
-        debugLog(`Pin ${index + 1} using rect:`, {
-          rect: pin.rect,
-          calculatedX: pinX,
-          calculatedY: pinY
-        });
-      } else {
-        // フォールバック: position座標
-        pinX = pin.position?.x || 0;
-        pinY = pin.position?.y || 0;
-        debugLog(`Pin ${index + 1} using position (no valid rect):`, {
-          hasRect: !!pin.rect,
-          rect: pin.rect,
-          position: pin.position,
-          calculatedX: pinX,
-          calculatedY: pinY
-        });
-      }
-
-      pinButton.style.left = `${pinX * 100}%`;
-      pinButton.style.top = `${pinY * 100}%`;
-
-      debugLog(`Pin ${index + 1} final DOM styles:`, {
-        left: pinButton.style.left,
-        top: pinButton.style.top,
-        pinXRaw: pinX,
-        pinYRaw: pinY
-      });
-
-      if (state.openPinId === pin.pinId) {
-        pinButton.classList.add("is-open");
-      }
-
-      const icon = document.createElement("span");
-      icon.className = "gemini-pin__icon";
-      icon.textContent = `📍${index + 1}`;
-
-      const bubble = document.createElement("div");
-      bubble.className = "gemini-pin__bubble";
-
-      // 吹き出しの位置を自動計算
-      const bubblePos = calculateBubblePosition(pinX, pinY);
-      bubble.dataset.position = bubblePos.position;
-      bubble.dataset.arrowClass = bubblePos.arrowClass;
-
-      const title = document.createElement("span");
-      title.className = "gemini-pin__bubble-title";
-      const feedback = state.feedbackItems.find((item) => item.id === pin.feedbackId);
-      title.textContent = feedback?.title || `指摘 ${index + 1}`;
-
-      // タイトルのみを表示（要約は削除）
-      bubble.append(title);
-      pinButton.append(icon, bubble);
-      state.pinOverlayPins.appendChild(pinButton);
-    });
-
+    // ピンモード時のみオーバーレイを表示
     updatePinOverlayVisibility();
   }
 
