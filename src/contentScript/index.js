@@ -224,7 +224,7 @@
         .feedback-button-group {
           position: fixed;
           right: 16px;
-          bottom: 96px;
+          bottom: 104px;
           width: 56px;
           height: 56px;
           cursor: grab;
