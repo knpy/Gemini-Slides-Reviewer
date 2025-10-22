@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Slides Reviewer",
+  "name": "けんしろうAI",
   "version": "0.1.0",
-  "description": "Run Gemini-based content checks on Google Slides directly from the editor.",
+  "description": "Google SlidesでAIによるコンテンツチェックを実行するChrome拡張機能",
   "permissions": [
     "storage",
     "scripting",
@@ -18,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Gemini Slides Reviewer"
+    "default_title": "けんしろうAI"
   },
   "options_page": "src/options/options.html",
   "icons": {

@@ -1078,10 +1078,10 @@
           レビューを実行すると指摘がここに表示されます
         </div>
       </div>
-      <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
+      <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"けんしろうAI\">
         <header>
           <div class=\"header-top\">
-            <h1>Gemini Slides Reviewer</h1>
+            <h1>けんしろうAI</h1>
             <button type=\"button\" aria-label=\"Close panel\">×</button>
           </div>
           <div class=\"project-selector\">
