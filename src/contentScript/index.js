@@ -4540,8 +4540,41 @@ ${rawText}`;
   function updateFeedbackFromResult(text) {
     const items = parseGeminiFeedbackText(text);
     console.log('[Gemini Slides] Parsed feedback items:', items);
-    setFeedbackItems(items);
-    focusInitialAnchor(items);
+    const enrichedItems = enrichFeedbackWithSlideIds(items);
+    console.log('[Gemini Slides] Enriched with slideIds:', enrichedItems);
+    setFeedbackItems(enrichedItems);
+    focusInitialAnchor(enrichedItems);
+  }
+
+  /**
+   * フィードバックアイテムのanchorsに現在のslideIdを追加
+   * @param {Array} items - フィードバックアイテムの配列
+   * @returns {Array} slideIdが追加されたフィードバックアイテムの配列
+   */
+  function enrichFeedbackWithSlideIds(items) {
+    if (!Array.isArray(items)) return items;
+
+    const currentSlideId = getCurrentSlideId();
+    if (!currentSlideId) {
+      console.warn('[Gemini Slides] No slideId found in URL');
+      return items;
+    }
+
+    return items.map(item => {
+      if (!Array.isArray(item.anchors) || item.anchors.length === 0) {
+        return item;
+      }
+
+      const enrichedAnchors = item.anchors.map(anchor => ({
+        ...anchor,
+        slideId: currentSlideId  // 現在のスライドIDを追加
+      }));
+
+      return {
+        ...item,
+        anchors: enrichedAnchors
+      };
+    });
   }
 
   function appendFeedbackFormatInstructions(promptText) {
@@ -5171,28 +5204,8 @@ ${rawText}`;
   }
 
   function formatSlideLabel(anchors, fallbackSlidePage) {
-    const pages = new Set();
-    if (Array.isArray(anchors)) {
-      anchors.forEach((anchor) => {
-        const page = Number(anchor?.slidePage);
-        if (page && !Number.isNaN(page)) {
-          pages.add(page);
-        }
-      });
-    }
-    if ((!pages.size) && fallbackSlidePage) {
-      const fallback = Number(fallbackSlidePage);
-      if (!Number.isNaN(fallback)) {
-        pages.add(fallback);
-      }
-    }
-    if (!pages.size) {
-      return "位置情報なし";
-    }
-    return Array.from(pages)
-      .sort((a, b) => a - b)
-      .map((page) => `Slide ${page}`)
-      .join(", ");
+    // スライド番号の表示は不要になったため、空文字列を返す
+    return "";
   }
 
   function normalizeAnchor(anchor) {
