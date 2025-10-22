@@ -1847,9 +1847,7 @@
     // Get slide number (use provided or detect)
     let finalSlideNumber = slideNumber;
     if (!finalSlideNumber) {
-      const slideNodes = getSlideOptionNodes();
-      const activeOrder = getActiveSlideOrder(slideNodes);
-      finalSlideNumber = activeOrder !== -1 ? activeOrder + 1 : 1;
+      finalSlideNumber = getCurrentSlidePageNumber();
     }
 
     summary.slides.push({
