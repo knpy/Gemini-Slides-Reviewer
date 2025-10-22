@@ -117,6 +117,19 @@
     state.ui.addPromptButton?.addEventListener("click", addNewPrompt);
     state.ui.closeButton?.addEventListener("click", togglePanel);
     state.ui.openButton?.addEventListener("click", togglePanel);
+    state.ui.feedbackFloatingButton?.addEventListener("click", toggleFeedbackPopup);
+    state.ui.feedbackPopupList?.addEventListener("click", handleFeedbackPopupClick);
+
+    // Close popup when clicking outside
+    document.addEventListener("click", (event) => {
+      if (!shadowRoot.contains(event.target)) return;
+      const popup = state.ui.feedbackPopup;
+      const button = state.ui.feedbackFloatingButton;
+      if (!popup || !button) return;
+      if (!popup.contains(event.target) && !button.contains(event.target) && popup.classList.contains("visible")) {
+        toggleFeedbackPopup();
+      }
+    });
 
     // Phase 2: Tab switching
     state.ui.tabButtons?.forEach(button => {
@@ -202,6 +215,117 @@
           height: 100%;
           border-radius: 50%;
           object-fit: cover;
+        }
+        .feedback-floating-button {
+          position: fixed;
+          right: 16px;
+          bottom: 96px;
+          background: #8ab4f8;
+          border: none;
+          border-radius: 50%;
+          width: 56px;
+          height: 56px;
+          padding: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 6px 16px rgba(138,180,248,0.3);
+          cursor: pointer;
+          z-index: 2147483646;
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          font-size: 24px;
+        }
+        .feedback-floating-button:hover {
+          transform: scale(1.05);
+          box-shadow: 0 8px 20px rgba(138,180,248,0.4);
+        }
+        .feedback-popup {
+          position: fixed;
+          right: 16px;
+          bottom: 160px;
+          width: 320px;
+          max-height: 400px;
+          background: #fff;
+          border-radius: 12px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+          z-index: 2147483645;
+          opacity: 0;
+          transform: translateY(20px) scale(0.95);
+          transition: opacity 0.2s ease, transform 0.2s ease;
+          pointer-events: none;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .feedback-popup.visible {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+        }
+        .feedback-popup-header {
+          padding: 16px;
+          border-bottom: 1px solid rgba(0,0,0,0.08);
+          font-weight: 600;
+          font-size: 14px;
+          color: #202124;
+        }
+        .feedback-popup-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .feedback-popup-item {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(0,0,0,0.06);
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+        .feedback-popup-item:hover {
+          background: rgba(138,180,248,0.08);
+        }
+        .feedback-popup-item:last-child {
+          border-bottom: none;
+        }
+        .feedback-popup-item-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 4px;
+        }
+        .feedback-popup-item-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #202124;
+          flex: 1;
+        }
+        .feedback-popup-item-badge {
+          font-size: 11px;
+          color: #5f6368;
+          background: rgba(0,0,0,0.05);
+          padding: 2px 8px;
+          border-radius: 10px;
+          margin-left: 8px;
+        }
+        .feedback-popup-item-badge.pinned {
+          color: #8ab4f8;
+          background: rgba(138,180,248,0.12);
+        }
+        .feedback-popup-item-summary {
+          font-size: 12px;
+          color: #5f6368;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .feedback-popup-empty {
+          padding: 32px 16px;
+          text-align: center;
+          font-size: 13px;
+          color: #9aa0a6;
         }
         .gemini-panel {
           position: fixed;
@@ -385,102 +509,6 @@
         .button.tertiary:disabled {
           opacity: 0.6;
           cursor: not-allowed;
-        }
-        .feedback-section {
-          border: 1px solid rgba(138,180,248,0.15);
-          border-radius: 8px;
-          padding: 14px 12px;
-          background: rgba(138,180,248,0.06);
-        }
-        .feedback-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .feedback-header-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #e8eaed;
-        }
-        .pin-mode-badge {
-          font-size: 11px;
-          color: #8ab4f8;
-          background: rgba(138,180,248,0.15);
-          border: 1px solid rgba(138,180,248,0.35);
-          border-radius: 999px;
-          padding: 4px 10px;
-        }
-        .feedback-empty {
-          font-size: 12px;
-          color: #9aa0a6;
-          background: rgba(0,0,0,0.15);
-          border-radius: 6px;
-          padding: 12px;
-        }
-        .feedback-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .feedback-item {
-          border-radius: 8px;
-          border: 1px solid rgba(138,180,248,0.2);
-          background: rgba(32,33,36,0.6);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .feedback-item[data-status="pinned"] {
-          border-left: 3px solid #8ab4f8;
-          background: rgba(138,180,248,0.12);
-        }
-        .feedback-item.is-highlighted {
-          box-shadow: 0 0 0 2px rgba(138,180,248,0.5);
-        }
-        .feedback-item.is-arming {
-          border-style: dashed;
-          border-color: rgba(251,188,4,0.6);
-          background: rgba(251,188,4,0.08);
-        }
-        .feedback-meta {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          font-size: 11px;
-          color: #9aa0a6;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-        .feedback-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #e8eaed;
-        }
-        .feedback-summary {
-          font-size: 12px;
-          color: #e8eaed;
-          line-height: 1.5;
-          margin: 0;
-          white-space: pre-wrap;
-        }
-        .feedback-actions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-        .feedback-actions .button {
-          flex: 1;
-          min-width: 120px;
-        }
-        .feedback-actions .button.tertiary {
-          flex: 0;
         }
         .progress-bar {
           width: 100%;
@@ -1009,6 +1037,16 @@
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\" aria-label=\"Gemini check\">
         <img id=\"gemini-icon-img\" src=\"\" alt=\"Gemini icon\" />
       </button>
+      <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"AIからの指摘を表示\">
+        💬
+      </button>
+      <div class=\"feedback-popup\" role=\"dialog\" aria-label=\"フィードバック一覧\">
+        <div class=\"feedback-popup-header\">AIからの指摘</div>
+        <ul class=\"feedback-popup-list\" id=\"feedback-popup-list\"></ul>
+        <div class=\"feedback-popup-empty\" id=\"feedback-popup-empty\">
+          レビューを実行すると指摘がここに表示されます
+        </div>
+      </div>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
         <header>
           <div class=\"header-top\">
@@ -1057,16 +1095,6 @@
           <section class=\"field\">
             <label>Result</label>
             <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
-          </section>
-          <section class=\"field feedback-section\" aria-labelledby=\"gemini-feedback-title\">
-            <div class=\"feedback-header\">
-              <span id=\"gemini-feedback-title\" class=\"feedback-header-title\">AIからの指摘</span>
-              <span id=\"pin-mode-badge\" class=\"pin-mode-badge\" hidden>ピン留めモード</span>
-            </div>
-            <div id=\"gemini-feedback-empty\" class=\"feedback-empty\">
-              レビューを実行すると指摘がここに表示されます。ピン留めするとスライド上に位置を記録できます。
-            </div>
-            <ul id=\"gemini-feedback-list\" class=\"feedback-list\" aria-live=\"polite\"></ul>
           </section>
         </div>
 
@@ -1142,14 +1170,18 @@
     state.ui.resetPromptButton = shadowRoot.querySelector("#gemini-reset-prompt");
     state.ui.result = shadowRoot.querySelector("#gemini-result");
     state.ui.screenshotPreview = shadowRoot.querySelector("#gemini-screenshot-preview");
-    state.ui.feedbackList = shadowRoot.querySelector("#gemini-feedback-list");
-    state.ui.feedbackEmpty = shadowRoot.querySelector("#gemini-feedback-empty");
-    state.ui.pinModeBadge = shadowRoot.querySelector("#pin-mode-badge");
-    if (state.ui.feedbackEmpty) {
-      state.ui.feedbackEmpty.hidden = false;
+
+    // Feedback popup elements
+    state.ui.feedbackFloatingButton = shadowRoot.querySelector(".feedback-floating-button");
+    state.ui.feedbackPopup = shadowRoot.querySelector(".feedback-popup");
+    state.ui.feedbackPopupList = shadowRoot.querySelector("#feedback-popup-list");
+    state.ui.feedbackPopupEmpty = shadowRoot.querySelector("#feedback-popup-empty");
+
+    if (state.ui.feedbackPopupEmpty) {
+      state.ui.feedbackPopupEmpty.hidden = false;
     }
-    if (state.ui.feedbackList) {
-      state.ui.feedbackList.hidden = true;
+    if (state.ui.feedbackPopupList) {
+      state.ui.feedbackPopupList.hidden = true;
     }
 
     // Phase 2: Context tab elements
@@ -4003,10 +4035,6 @@ ${rawText}`;
     injectPinStyles();
     ensurePinOverlay();
 
-    if (state.ui.feedbackList) {
-      state.ui.feedbackList.addEventListener("click", handleFeedbackListClick);
-    }
-
     document.addEventListener("keydown", handlePinKeydown, true);
 
     if (!state.pinResizeHandler) {
@@ -4145,9 +4173,9 @@ ${rawText}`;
   color: #202124;
 }
 #gemini-pin-overlay .gemini-pin__bubble {
-  position: relative;
-  min-width: 200px;
-  max-width: 260px;
+  position: absolute;
+  min-width: 150px;
+  max-width: 220px;
   background: rgba(32,33,36,0.92);
   color: #e8eaed;
   border: 1px solid rgba(138,180,248,0.35);
@@ -4156,35 +4184,100 @@ ${rawText}`;
   box-shadow: 0 12px 24px rgba(0,0,0,0.35);
   opacity: 0;
   visibility: hidden;
-  transform: translateY(8px);
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
   pointer-events: auto;
   box-sizing: border-box;
   z-index: 2;
+  white-space: nowrap;
 }
+
+/* デフォルト位置: 右側 */
+#gemini-pin-overlay .gemini-pin__bubble[data-position="right"] {
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="left"] {
+  right: calc(100% + 12px);
+  top: 50%;
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="top"] {
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="bottom"] {
+  top: calc(100% + 12px);
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+
+/* 矢印の位置調整 */
 #gemini-pin-overlay .gemini-pin__bubble::before {
   content: '';
   position: absolute;
-  top: -6px;
-  left: calc(50% - 6px);
   width: 12px;
   height: 12px;
   background: rgba(32,33,36,0.92);
-  border-left: 1px solid rgba(138,180,248,0.35);
-  border-top: 1px solid rgba(138,180,248,0.35);
+  border: 1px solid rgba(138,180,248,0.35);
   transform: rotate(45deg);
+}
+/* 右側表示時: 矢印は左 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-left"]::before {
+  left: -6px;
+  top: calc(50% - 6px);
+  border-right: none;
+  border-bottom: none;
+}
+/* 左側表示時: 矢印は右 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-right"]::before {
+  right: -6px;
+  top: calc(50% - 6px);
+  border-left: none;
+  border-top: none;
+}
+/* 上側表示時: 矢印は下 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-bottom"]::before {
+  bottom: -6px;
+  left: calc(50% - 6px);
+  border-top: none;
+  border-left: none;
+}
+/* 下側表示時: 矢印は上 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-top"]::before {
+  top: -6px;
+  left: calc(50% - 6px);
+  border-bottom: none;
+  border-right: none;
 }
 #gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble,
 #gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+}
+/* 位置ごとのホバー時トランスフォーム */
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="right"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="right"] {
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="left"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="left"] {
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="top"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="top"] {
+  transform: translate(-50%, 0);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="bottom"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="bottom"] {
+  transform: translate(-50%, 0);
 }
 #gemini-pin-overlay .gemini-pin__bubble-title {
   font-size: 12px;
   font-weight: 600;
   display: block;
-  margin-bottom: 4px;
+  margin: 0;
 }
 #gemini-pin-overlay .gemini-pin__bubble-body {
   font-size: 11px;
@@ -5029,11 +5122,34 @@ ${rawText}`;
     return Array.isArray(feedback?.anchors) ? feedback.anchors : [];
   }
 
-  function renderFeedbackList() {
-    if (!state.ui.feedbackList || !state.ui.feedbackEmpty) return;
+  function toggleFeedbackPopup() {
+    const popup = state.ui.feedbackPopup;
+    if (!popup) return;
+    popup.classList.toggle("visible");
+  }
 
-    const list = state.ui.feedbackList;
-    const emptyState = state.ui.feedbackEmpty;
+  function handleFeedbackPopupClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const item = target.closest(".feedback-popup-item");
+    if (!item) return;
+
+    const feedbackId = item.dataset.feedbackId;
+    if (!feedbackId) return;
+
+    // Close popup and focus feedback
+    if (state.ui.feedbackPopup?.classList.contains("visible")) {
+      toggleFeedbackPopup();
+    }
+    focusFeedback(feedbackId);
+  }
+
+  function renderFeedbackPopup() {
+    if (!state.ui.feedbackPopupList || !state.ui.feedbackPopupEmpty) return;
+
+    const list = state.ui.feedbackPopupList;
+    const emptyState = state.ui.feedbackPopupEmpty;
     const items = Array.isArray(state.feedbackItems) ? state.feedbackItems : [];
 
     list.innerHTML = "";
@@ -5041,7 +5157,6 @@ ${rawText}`;
     if (!items.length) {
       emptyState.hidden = false;
       list.hidden = true;
-      updatePinModeBadge();
       return;
     }
 
@@ -5050,100 +5165,42 @@ ${rawText}`;
 
     items.forEach((item, index) => {
       const li = document.createElement("li");
-      li.className = "feedback-item";
+      li.className = "feedback-popup-item";
       li.dataset.feedbackId = item.id;
+
+      const header = document.createElement("div");
+      header.className = "feedback-popup-item-header";
+
+      const title = document.createElement("div");
+      title.className = "feedback-popup-item-title";
+      title.textContent = item.title || `指摘 ${index + 1}`;
 
       const anchors = Array.isArray(item.anchors) ? item.anchors : [];
       const slideLabel = formatSlideLabel(anchors, item.slidePage);
 
-      if (isFeedbackPinned(item.id)) {
-        li.dataset.status = "pinned";
+      const badge = document.createElement("span");
+      badge.className = "feedback-popup-item-badge";
+      if (anchors.length > 0) {
+        badge.classList.add("pinned");
+        badge.textContent = `📍 ${slideLabel}`;
+      } else {
+        badge.textContent = slideLabel;
       }
 
-      const meta = document.createElement("div");
-      meta.className = "feedback-meta";
-      const orderSpan = document.createElement("span");
-      orderSpan.textContent = `指摘 ${index + 1}`;
-      const slideSpan = document.createElement("span");
-      slideSpan.textContent = slideLabel;
-      meta.append(orderSpan, slideSpan);
+      header.append(title, badge);
 
-      const title = document.createElement("div");
-      title.className = "feedback-title";
-      title.textContent = item.title || `指摘 ${index + 1}`;
-
-      const summary = document.createElement("p");
-      summary.className = "feedback-summary";
+      const summary = document.createElement("div");
+      summary.className = "feedback-popup-item-summary";
       summary.textContent = item.summary || item.body || "";
 
-      const actions = document.createElement("div");
-      actions.className = "feedback-actions";
-
-      const focusButton = document.createElement("button");
-      focusButton.className = "button tertiary";
-      focusButton.type = "button";
-      focusButton.dataset.action = "focus";
-      focusButton.dataset.feedbackId = item.id;
-      focusButton.disabled = anchors.length === 0;
-      if (anchors.length === 0) {
-        focusButton.textContent = "位置情報なし";
-      } else if (anchors.length === 1) {
-        focusButton.textContent = "📍 スライドで表示";
-      } else {
-        focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
-      }
-
-      actions.append(focusButton);
-      li.append(meta, title, summary, actions);
+      li.append(header, summary);
       list.appendChild(li);
     });
-
-    highlightFeedback(state.pinMode.isActive
-      ? state.pinMode.feedbackId
-      : (state.openPinId ? findPinById(state.openPinId)?.feedbackId : null));
-
-    updateFeedbackListPinStates();
-    updatePinModeBadge();
   }
 
-  function updateFeedbackListPinStates() {
-    if (!state.ui.feedbackList) return;
-    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
-    items.forEach((item) => {
-      const feedbackId = item.dataset.feedbackId;
-      const anchors = getAnchorsForFeedback(feedbackId);
-      const pinned = anchors.length > 0;
-      if (pinned) {
-        item.dataset.status = "pinned";
-      } else {
-        item.removeAttribute("data-status");
-      }
-      const focusButton = item.querySelector('[data-action="focus"]');
-      if (focusButton) {
-        focusButton.disabled = anchors.length === 0;
-        if (anchors.length === 0) {
-          focusButton.textContent = "位置情報なし";
-        } else if (anchors.length === 1) {
-          focusButton.textContent = "📍 スライドで表示";
-        } else {
-          focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
-        }
-      }
-    });
-  }
-
-  function handleFeedbackListClick(event) {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const action = target.dataset.action;
-    const feedbackId = target.dataset.feedbackId;
-    if (!action || !feedbackId) return;
-
-    if (action === "focus") {
-      event.preventDefault();
-      focusFeedback(feedbackId);
-    }
+  function renderFeedbackList() {
+    // Legacy function - now delegates to popup
+    renderFeedbackPopup();
   }
 
   function focusFeedback(feedbackId) {
@@ -5187,7 +5244,6 @@ ${rawText}`;
 
     updatePinOverlayVisibility();
     updatePinModeBadge();
-    updateFeedbackListPinStates();
     highlightFeedback(feedbackId, { scrollIntoView: true });
     updatePinOverlayBounds();
   }
@@ -5203,7 +5259,6 @@ ${rawText}`;
 
     updatePinOverlayVisibility();
     updatePinModeBadge();
-    updateFeedbackListPinStates();
 
     if (reason !== "placed") {
       const openFeedbackId = state.openPinId ? findPinById(state.openPinId)?.feedbackId : null;
@@ -5212,25 +5267,7 @@ ${rawText}`;
   }
 
   function updatePinModeBadge() {
-    if (!state.ui.pinModeBadge) return;
-    if (state.pinMode.isActive) {
-      const feedback = state.feedbackItems.find((item) => item.id === state.pinMode.feedbackId);
-      state.ui.pinModeBadge.hidden = false;
-      state.ui.pinModeBadge.textContent = feedback
-        ? `ピン留め中: ${feedback.title || "指摘"}`
-        : "ピン留めモード";
-    } else {
-      const totalPins = Object.values(state.pinsBySlide || {}).reduce(
-        (sum, pinList) => sum + (Array.isArray(pinList) ? pinList.length : 0),
-        0
-      );
-      if (totalPins > 0) {
-        state.ui.pinModeBadge.hidden = false;
-        state.ui.pinModeBadge.textContent = `📍 ${totalPins}箇所ハイライト中`;
-      } else {
-        state.ui.pinModeBadge.hidden = true;
-      }
-    }
+    // No longer needed - removed from UI
   }
 
   function handlePinKeydown(event) {
@@ -5276,6 +5313,43 @@ ${rawText}`;
     state.pinsBySlide[slidePage].push(pin);
     return pin;
   }
+
+  /**
+   * 吹き出しの最適な位置を計算（画面端を考慮して自動調整）
+   * @param {number} pinX - ピンのX座標（0-1の正規化座標）
+   * @param {number} pinY - ピンのY座標（0-1の正規化座標）
+   * @returns {{position: string, offset: {x: string, y: string}, arrowClass: string}}
+   */
+  const calculateBubblePosition = (pinX, pinY) => {
+    const EDGE_THRESHOLD = 0.3; // 画面端の判定閾値（30%）
+    const BUBBLE_OFFSET = 12; // 吹き出しとピンの間隔(px)
+
+    // デフォルトは右側に表示
+    let position = 'right';
+    let arrowClass = 'arrow-left';
+
+    // 右端に近い場合は左側に表示
+    if (pinX > 1 - EDGE_THRESHOLD) {
+      position = 'left';
+      arrowClass = 'arrow-right';
+    }
+    // 上端に近い場合は下側に表示
+    else if (pinY < EDGE_THRESHOLD) {
+      position = 'bottom';
+      arrowClass = 'arrow-top';
+    }
+    // 下端に近い場合は上側に表示
+    else if (pinY > 1 - EDGE_THRESHOLD) {
+      position = 'top';
+      arrowClass = 'arrow-bottom';
+    }
+
+    return {
+      position,
+      arrowClass,
+      offset: BUBBLE_OFFSET
+    };
+  };
 
   function renderPinsForCurrentSlide() {
     if (!state.pinOverlayPins) return;
@@ -5369,22 +5443,23 @@ ${rawText}`;
       const bubble = document.createElement("div");
       bubble.className = "gemini-pin__bubble";
 
+      // 吹き出しの位置を自動計算
+      const bubblePos = calculateBubblePosition(pinX, pinY);
+      bubble.dataset.position = bubblePos.position;
+      bubble.dataset.arrowClass = bubblePos.arrowClass;
+
       const title = document.createElement("span");
       title.className = "gemini-pin__bubble-title";
       const feedback = state.feedbackItems.find((item) => item.id === pin.feedbackId);
       title.textContent = feedback?.title || `指摘 ${index + 1}`;
 
-      const body = document.createElement("p");
-      body.className = "gemini-pin__bubble-body";
-      body.textContent = feedback?.summary || feedback?.body || "";
-
-      bubble.append(title, body);
+      // タイトルのみを表示（要約は削除）
+      bubble.append(title);
       pinButton.append(icon, bubble);
       state.pinOverlayPins.appendChild(pinButton);
     });
 
     updatePinOverlayVisibility();
-    updateFeedbackListPinStates();
   }
 
   function handlePinContainerClick(event) {
@@ -5423,22 +5498,10 @@ ${rawText}`;
     const feedbackId = pin?.feedbackId || null;
 
     highlightFeedback(feedbackId, options);
-    updateFeedbackListPinStates();
   }
 
   function highlightFeedback(feedbackId, options = {}) {
-    if (!state.ui.feedbackList) return;
-    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
-    items.forEach((item) => {
-      const isTarget = feedbackId && item.dataset.feedbackId === feedbackId;
-      item.classList.toggle("is-highlighted", Boolean(isTarget));
-      if (isTarget && options.scrollIntoView) {
-        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    });
-    if (!feedbackId) {
-      items.forEach((item) => item.classList.remove("is-highlighted"));
-    }
+    // No longer needed - feedback list moved to popup
   }
 
   function updatePinOverlayBounds() {
