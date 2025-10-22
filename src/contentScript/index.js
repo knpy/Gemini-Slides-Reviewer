@@ -1844,7 +1844,8 @@
     // Capture screenshot of current slide
     const screenshot = await captureSlideScreenshot();
 
-    // Get slide number (use provided or detect)
+    // Get slide ID and number (use provided or detect)
+    const slideId = getCurrentSlideId();
     let finalSlideNumber = slideNumber;
     if (!finalSlideNumber) {
       finalSlideNumber = getCurrentSlidePageNumber();
@@ -1852,6 +1853,7 @@
 
     summary.slides.push({
       number: finalSlideNumber,
+      slideId: slideId,
       screenshot: screenshot
     });
 
@@ -5413,19 +5415,23 @@ ${rawText}`;
     }
 
     const anchor = anchors[0]; // 最初のアンカーを使用
-    const targetSlide = anchor.slidePage;
+    const targetSlideId = anchor.slideId;
 
     // スライドに移動
-    const currentSlide = getCurrentSlidePageNumber();
-    if (currentSlide !== targetSlide) {
-      navigateToSlide(targetSlide);
-      // スライド移動後に少し待ってから吹き出しを表示
-      setTimeout(() => {
-        renderTemporaryBubble(feedback, anchor);
-      }, 500);
-    } else {
-      renderTemporaryBubble(feedback, anchor);
+    if (targetSlideId) {
+      const currentSlideId = getCurrentSlideId();
+      if (currentSlideId !== targetSlideId) {
+        navigateToSlideById(targetSlideId);
+        // スライド移動後に少し待ってから吹き出しを表示
+        setTimeout(() => {
+          renderTemporaryBubble(feedback, anchor);
+        }, 500);
+        return;
+      }
     }
+
+    // 既に正しいスライドにいる場合、または移動不要な場合
+    renderTemporaryBubble(feedback, anchor);
   }
 
   function renderTemporaryBubble(feedback, anchor) {
@@ -5933,6 +5939,25 @@ ${rawText}`;
   function getCurrentSlidePageNumber() {
     const index = getActiveSlideIndex();
     return index >= 0 ? index + 1 : 1;
+  }
+
+  /**
+   * 現在のスライドIDを取得
+   * @returns {string|null} スライドID (例: "p3", "g12345678")
+   */
+  function getCurrentSlideId() {
+    const hash = window.location.hash;
+    const match = hash.match(/#slide=id\.(.+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * 指定したスライドIDのスライドに移動
+   * @param {string} slideId - スライドID
+   */
+  function navigateToSlideById(slideId) {
+    if (!slideId) return;
+    window.location.hash = `#slide=id.${slideId}`;
   }
 
   /**
