@@ -1067,12 +1067,12 @@
       </style>
       <div class=\"feedback-button-group\">
         <img id=\"gemini-icon-large\" src=\"\" alt=\"Gemini icon\" class=\"gemini-icon-large\" />
-        <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"AIからの指摘を表示\">
+        <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"けんしろうAIからの指摘を表示\">
           💬
         </button>
       </div>
       <div class=\"feedback-popup\" role=\"dialog\" aria-label=\"フィードバック一覧\">
-        <div class=\"feedback-popup-header\">AIからの指摘</div>
+        <div class=\"feedback-popup-header\">けんしろうAIからの指摘</div>
         <ul class=\"feedback-popup-list\" id=\"feedback-popup-list\"></ul>
         <div class=\"feedback-popup-empty\" id=\"feedback-popup-empty\">
           レビューを実行すると指摘がここに表示されます
