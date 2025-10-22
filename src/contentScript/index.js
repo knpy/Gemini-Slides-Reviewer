@@ -1844,8 +1844,9 @@
     // Capture screenshot of current slide
     const screenshot = await captureSlideScreenshot();
 
-    // Get slide ID and number (use provided or detect)
+    // Get slide ID, index, and number (use provided or detect)
     const slideId = getCurrentSlideId();
+    const slideIndex = getActiveSlideIndex();  // 0-based index
     let finalSlideNumber = slideNumber;
     if (!finalSlideNumber) {
       finalSlideNumber = getCurrentSlidePageNumber();
@@ -1854,6 +1855,7 @@
     summary.slides.push({
       number: finalSlideNumber,
       slideId: slideId,
+      slideIndex: slideIndex,  // フィルムストリップでのインデックス（0始まり）
       screenshot: screenshot
     });
 
@@ -4555,9 +4557,13 @@ ${rawText}`;
     if (!Array.isArray(items)) return items;
 
     const currentSlideId = getCurrentSlideId();
+    const currentSlideIndex = getActiveSlideIndex();
+
     if (!currentSlideId) {
       console.warn('[Gemini Slides] No slideId found in URL');
-      return items;
+    }
+    if (currentSlideIndex < 0) {
+      console.warn('[Gemini Slides] No valid slideIndex found');
     }
 
     return items.map(item => {
@@ -4567,7 +4573,8 @@ ${rawText}`;
 
       const enrichedAnchors = item.anchors.map(anchor => ({
         ...anchor,
-        slideId: currentSlideId  // 現在のスライドIDを追加
+        slideId: currentSlideId,      // スライドID
+        slideIndex: currentSlideIndex // フィルムストリップのインデックス（0始まり）
       }));
 
       return {
@@ -5428,13 +5435,14 @@ ${rawText}`;
     }
 
     const anchor = anchors[0]; // 最初のアンカーを使用
-    const targetSlideId = anchor.slideId;
+    const targetSlideIndex = anchor.slideIndex;
 
-    // スライドに移動
-    if (targetSlideId) {
-      const currentSlideId = getCurrentSlideId();
-      if (currentSlideId !== targetSlideId) {
-        navigateToSlideById(targetSlideId);
+    // スライドに移動（slideIndexを使用）
+    if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
+      const currentSlideIndex = getActiveSlideIndex();
+      if (currentSlideIndex !== targetSlideIndex) {
+        console.log('[Gemini Slides] Moving from slide', currentSlideIndex, 'to', targetSlideIndex);
+        navigateToSlideByIndex(targetSlideIndex);
         // スライド移動後に少し待ってから吹き出しを表示
         setTimeout(() => {
           renderTemporaryBubble(feedback, anchor);
@@ -5971,6 +5979,26 @@ ${rawText}`;
   function navigateToSlideById(slideId) {
     if (!slideId) return;
     window.location.hash = `#slide=id.${slideId}`;
+  }
+
+  /**
+   * 指定したインデックスのスライドに移動（フィルムストリップのサムネイルをクリック）
+   * @param {number} slideIndex - スライドのインデックス（0始まり）
+   */
+  function navigateToSlideByIndex(slideIndex) {
+    if (typeof slideIndex !== 'number' || slideIndex < 0) return;
+
+    const slideNodes = getSlideOptionNodes();
+    if (slideIndex >= slideNodes.length) {
+      console.warn('[Gemini Slides] slideIndex out of range:', slideIndex, 'max:', slideNodes.length - 1);
+      return;
+    }
+
+    const targetNode = slideNodes[slideIndex];
+    if (targetNode) {
+      console.log('[Gemini Slides] Navigating to slide index:', slideIndex);
+      targetNode.click();  // サムネイルをクリックしてスライド移動
+    }
   }
 
   /**
