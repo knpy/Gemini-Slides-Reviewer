@@ -120,9 +120,9 @@
     state.ui.feedbackFloatingButton?.addEventListener("click", toggleFeedbackPopup);
     state.ui.feedbackPopupList?.addEventListener("click", handleFeedbackPopupClick);
 
-    // Initialize draggable functionality for feedback button
-    if (state.ui.feedbackFloatingButton) {
-      initializeDraggableFeedbackButton(state.ui.feedbackFloatingButton);
+    // Initialize draggable functionality for feedback button group
+    if (state.ui.feedbackButtonGroup) {
+      initializeDraggableFeedbackButton(state.ui.feedbackButtonGroup);
     }
 
     // Close popup when clicking outside
@@ -221,33 +221,51 @@
           border-radius: 50%;
           object-fit: cover;
         }
-        .feedback-floating-button {
+        .feedback-button-group {
           position: fixed;
           right: 16px;
           bottom: 96px;
-          background: #8ab4f8;
-          border: none;
-          border-radius: 50%;
           width: 56px;
           height: 56px;
+          cursor: grab;
+          z-index: 2147483646;
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        .feedback-button-group:active {
+          cursor: grabbing;
+        }
+        .gemini-icon-large {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          box-shadow: 0 6px 16px rgba(138,180,248,0.3);
+          object-fit: cover;
+          pointer-events: none;
+        }
+        .feedback-floating-button {
+          position: absolute;
+          top: -4px;
+          left: -4px;
+          background: #8ab4f8;
+          border: 2px solid white;
+          border-radius: 50%;
+          width: 24px;
+          height: 24px;
           padding: 0;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 6px 16px rgba(138,180,248,0.3);
-          cursor: grab;
-          z-index: 2147483646;
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
-          font-size: 24px;
-          user-select: none;
-          -webkit-user-select: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          cursor: pointer;
+          font-size: 12px;
+          z-index: 1;
         }
         .feedback-floating-button:hover {
-          transform: scale(1.05);
-          box-shadow: 0 8px 20px rgba(138,180,248,0.4);
-        }
-        .feedback-floating-button:active {
-          cursor: grabbing;
+          transform: scale(1.1);
         }
         .feedback-popup {
           position: fixed;
@@ -1047,9 +1065,12 @@
       <button class=\"gemini-floating-button\" aria-haspopup=\"true\" aria-label=\"Gemini check\">
         <img id=\"gemini-icon-img\" src=\"\" alt=\"Gemini icon\" />
       </button>
-      <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"AIからの指摘を表示\">
-        💬
-      </button>
+      <div class=\"feedback-button-group\">
+        <img id=\"gemini-icon-large\" src=\"\" alt=\"Gemini icon\" class=\"gemini-icon-large\" />
+        <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"AIからの指摘を表示\">
+          💬
+        </button>
+      </div>
       <div class=\"feedback-popup\" role=\"dialog\" aria-label=\"フィードバック一覧\">
         <div class=\"feedback-popup-header\">AIからの指摘</div>
         <ul class=\"feedback-popup-list\" id=\"feedback-popup-list\"></ul>
@@ -1182,6 +1203,7 @@
     state.ui.screenshotPreview = shadowRoot.querySelector("#gemini-screenshot-preview");
 
     // Feedback popup elements
+    state.ui.feedbackButtonGroup = shadowRoot.querySelector(".feedback-button-group");
     state.ui.feedbackFloatingButton = shadowRoot.querySelector(".feedback-floating-button");
     state.ui.feedbackPopup = shadowRoot.querySelector(".feedback-popup");
     state.ui.feedbackPopupList = shadowRoot.querySelector("#feedback-popup-list");
@@ -1209,6 +1231,11 @@
     const iconImg = shadowRoot.querySelector("#gemini-icon-img");
     if (iconImg) {
       iconImg.src = chrome.runtime.getURL('assets/gemini-icon.png');
+    }
+
+    const geminiIconLarge = shadowRoot.querySelector("#gemini-icon-large");
+    if (geminiIconLarge) {
+      geminiIconLarge.src = chrome.runtime.getURL('assets/gemini-icon.png');
     }
   }
 
@@ -5223,7 +5250,7 @@ ${rawText}`;
     popup.classList.toggle("visible");
   }
 
-  function initializeDraggableFeedbackButton(button) {
+  function initializeDraggableFeedbackButton(buttonGroup) {
     let isDragging = false;
     let dragStartX = 0;
     let dragStartY = 0;
@@ -5234,10 +5261,10 @@ ${rawText}`;
     // Load saved position from localStorage
     const savedPosition = loadFeedbackButtonPosition();
     if (savedPosition) {
-      button.style.right = 'auto';
-      button.style.bottom = 'auto';
-      button.style.left = `${savedPosition.x}px`;
-      button.style.top = `${savedPosition.y}px`;
+      buttonGroup.style.right = 'auto';
+      buttonGroup.style.bottom = 'auto';
+      buttonGroup.style.left = `${savedPosition.x}px`;
+      buttonGroup.style.top = `${savedPosition.y}px`;
     }
 
     const handleMouseDown = (e) => {
@@ -5249,12 +5276,11 @@ ${rawText}`;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
 
-      const rect = button.getBoundingClientRect();
+      const rect = buttonGroup.getBoundingClientRect();
       buttonStartX = rect.left;
       buttonStartY = rect.top;
 
-      button.style.cursor = 'grabbing';
-      button.style.transition = 'none';
+      buttonGroup.style.cursor = 'grabbing';
       e.preventDefault();
     };
 
@@ -5273,16 +5299,16 @@ ${rawText}`;
       const newY = buttonStartY + deltaY;
 
       // Constrain to viewport bounds
-      const maxX = window.innerWidth - button.offsetWidth;
-      const maxY = window.innerHeight - button.offsetHeight;
+      const maxX = window.innerWidth - buttonGroup.offsetWidth;
+      const maxY = window.innerHeight - buttonGroup.offsetHeight;
 
       const constrainedX = Math.max(0, Math.min(newX, maxX));
       const constrainedY = Math.max(0, Math.min(newY, maxY));
 
-      button.style.right = 'auto';
-      button.style.bottom = 'auto';
-      button.style.left = `${constrainedX}px`;
-      button.style.top = `${constrainedY}px`;
+      buttonGroup.style.right = 'auto';
+      buttonGroup.style.bottom = 'auto';
+      buttonGroup.style.left = `${constrainedX}px`;
+      buttonGroup.style.top = `${constrainedY}px`;
 
       e.preventDefault();
     };
@@ -5291,11 +5317,10 @@ ${rawText}`;
       if (!isDragging) return;
 
       isDragging = false;
-      button.style.cursor = 'pointer';
-      button.style.transition = '';
+      buttonGroup.style.cursor = 'grab';
 
       // Save position to localStorage
-      const rect = button.getBoundingClientRect();
+      const rect = buttonGroup.getBoundingClientRect();
       saveFeedbackButtonPosition({ x: rect.left, y: rect.top });
 
       // Prevent click event if button was dragged
@@ -5303,32 +5328,32 @@ ${rawText}`;
         e.preventDefault();
         e.stopPropagation();
         // Add a temporary flag to prevent click
-        button.dataset.justDragged = 'true';
+        buttonGroup.dataset.justDragged = 'true';
         setTimeout(() => {
-          delete button.dataset.justDragged;
+          delete buttonGroup.dataset.justDragged;
         }, 100);
       }
     };
 
     // Prevent click when just dragged
     const handleClick = (e) => {
-      if (button.dataset.justDragged === 'true') {
+      if (buttonGroup.dataset.justDragged === 'true') {
         e.preventDefault();
         e.stopPropagation();
       }
     };
 
-    button.addEventListener('mousedown', handleMouseDown);
+    buttonGroup.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-    button.addEventListener('click', handleClick, true);
+    buttonGroup.addEventListener('click', handleClick, true);
 
     // Cleanup function
     return () => {
-      button.removeEventListener('mousedown', handleMouseDown);
+      buttonGroup.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-      button.removeEventListener('click', handleClick, true);
+      buttonGroup.removeEventListener('click', handleClick, true);
     };
   }
 
