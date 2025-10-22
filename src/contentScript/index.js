@@ -179,19 +179,29 @@
           position: fixed;
           right: 16px;
           bottom: 16px;
-          background: #1b73e8;
-          color: #fff;
+          background: #fff;
           border: none;
-          border-radius: 999px;
-          padding: 10px 20px;
-          font-size: 14px;
-          font-weight: 600;
-          box-shadow: 0 8px 20px rgba(27,115,232,0.35);
+          border-radius: 50%;
+          width: 64px;
+          height: 64px;
+          padding: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 8px 20px rgba(0,0,0,0.15);
           cursor: pointer;
           z-index: 2147483646;
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
         .gemini-floating-button:hover {
-          background: #1559b5;
+          transform: scale(1.05);
+          box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+        }
+        .gemini-floating-button img {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          object-fit: cover;
         }
         .gemini-panel {
           position: fixed;
@@ -996,7 +1006,9 @@
           font-size: 11px;
         }
       </style>
-      <button class=\"gemini-floating-button\" aria-haspopup=\"true\">Gemini check</button>
+      <button class=\"gemini-floating-button\" aria-haspopup=\"true\" aria-label=\"Gemini check\">
+        <img id=\"gemini-icon-img\" src=\"\" alt=\"Gemini icon\" />
+      </button>
       <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
         <header>
           <div class=\"header-top\">
@@ -1150,6 +1162,12 @@
     state.ui.saveContextButton = shadowRoot.querySelector("#gemini-save-context");
     state.ui.staticContextToggle = shadowRoot.querySelector("[data-toggle='static-context']");
     state.ui.staticContextContent = shadowRoot.querySelector("#static-context-content");
+
+    // Set icon image URL dynamically
+    const iconImg = shadowRoot.querySelector("#gemini-icon-img");
+    if (iconImg) {
+      iconImg.src = chrome.runtime.getURL('assets/gemini-icon.png');
+    }
   }
 
   function hydratePromptsUI() {

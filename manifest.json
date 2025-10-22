@@ -42,7 +42,8 @@
     {
       "resources": [
         "src/common/prompts.js",
-        "src/config/runtimeConfig.json"
+        "src/config/runtimeConfig.json",
+        "assets/gemini-icon.png"
       ],
       "matches": [
         "https://docs.google.com/*"
