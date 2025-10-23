@@ -5326,14 +5326,8 @@ ${rawText}`;
     let buttonStartY = 0;
     let hasMoved = false;
 
-    // Load saved position from localStorage
-    const savedPosition = loadFeedbackButtonPosition();
-    if (savedPosition) {
-      buttonGroup.style.right = 'auto';
-      buttonGroup.style.bottom = 'auto';
-      buttonGroup.style.left = `${savedPosition.x}px`;
-      buttonGroup.style.top = `${savedPosition.y}px`;
-    }
+    // ページリロード時は常に右下(デフォルト位置)に配置
+    // 位置復元処理は削除
 
     const handleMouseDown = (e) => {
       // Only allow dragging with left mouse button
@@ -5387,9 +5381,7 @@ ${rawText}`;
       isDragging = false;
       buttonGroup.style.cursor = 'grab';
 
-      // Save position to localStorage
-      const rect = buttonGroup.getBoundingClientRect();
-      saveFeedbackButtonPosition({ x: rect.left, y: rect.top });
+      // 位置保存処理は削除（ページリロード時に右下にリセットするため）
 
       // Prevent click event if button was dragged
       if (hasMoved) {
@@ -5425,23 +5417,7 @@ ${rawText}`;
     };
   }
 
-  function saveFeedbackButtonPosition(position) {
-    try {
-      localStorage.setItem('gemini-feedback-button-position', JSON.stringify(position));
-    } catch (error) {
-      console.warn('Failed to save feedback button position:', error);
-    }
-  }
-
-  function loadFeedbackButtonPosition() {
-    try {
-      const saved = localStorage.getItem('gemini-feedback-button-position');
-      return saved ? JSON.parse(saved) : null;
-    } catch (error) {
-      console.warn('Failed to load feedback button position:', error);
-      return null;
-    }
-  }
+  // 位置保存/読み込み関数は削除（ページリロード時に右下にリセットするため）
 
   async function handleFeedbackDelete(feedbackId) {
     if (!feedbackId) return;
