@@ -352,6 +352,26 @@
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
+        .feedback-popup-item-delete {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          color: #5f6368;
+          background: transparent;
+          border: none;
+          padding: 0;
+          margin-left: 8px;
+          flex-shrink: 0;
+          transition: all 0.15s ease;
+        }
+        .feedback-popup-item-delete:hover {
+          background: rgba(234,67,53,0.1);
+          color: #ea4335;
+        }
         .feedback-popup-empty {
           padding: 32px 16px;
           text-align: center;
@@ -5395,9 +5415,52 @@ ${rawText}`;
     }
   }
 
+  async function handleFeedbackDelete(feedbackId) {
+    if (!feedbackId) return;
+
+    // フィードバックアイテムを削除
+    state.feedbackItems = state.feedbackItems.filter((item) => item.id !== feedbackId);
+
+    // 関連するピンを削除
+    Object.keys(state.pinsBySlide).forEach((slideKey) => {
+      state.pinsBySlide[slideKey] = state.pinsBySlide[slideKey].filter(
+        (pin) => pin.feedbackId !== feedbackId
+      );
+      // 空になったスライドキーを削除
+      if (state.pinsBySlide[slideKey].length === 0) {
+        delete state.pinsBySlide[slideKey];
+      }
+    });
+
+    // ストレージに保存
+    const presentationId = extractPresentationId(window.location.href);
+    if (presentationId) {
+      await savePinsToStorage(presentationId, state.pinsBySlide);
+      await saveFeedbackToStorage(presentationId, state.feedbackItems);
+    }
+
+    // UIを更新
+    renderFeedbackList();
+    renderPinsForCurrentSlide();
+    updatePinOverlayVisibility();
+
+    console.log('[Feedback] Deleted feedback:', feedbackId);
+  }
+
   function handleFeedbackPopupClick(event) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    // 削除ボタンがクリックされた場合
+    const deleteButton = target.closest(".feedback-popup-item-delete");
+    if (deleteButton) {
+      event.stopPropagation();
+      const feedbackId = deleteButton.dataset.feedbackId;
+      if (feedbackId) {
+        handleFeedbackDelete(feedbackId);
+      }
+      return;
+    }
 
     const item = target.closest(".feedback-popup-item");
     if (!item) return;
@@ -5429,13 +5492,25 @@ ${rawText}`;
 
     // アンカー情報を取得
     const anchors = Array.isArray(feedback.anchors) ? feedback.anchors : [];
-    if (anchors.length === 0) {
-      console.log('No anchors for feedback:', feedbackId);
-      return;
-    }
+    let targetSlideIndex = null;
+    let anchor = null;
 
-    const anchor = anchors[0]; // 最初のアンカーを使用
-    const targetSlideIndex = anchor.slideIndex;
+    // アンカーが存在する場合
+    if (anchors.length > 0) {
+      anchor = anchors[0]; // 最初のアンカーを使用
+      targetSlideIndex = anchor.slideIndex;
+    } else {
+      // アンカーがない場合、フィードバック直下のslideIndexを使用（後方互換性）
+      if (typeof feedback.slideIndex === 'number' && feedback.slideIndex >= 0) {
+        targetSlideIndex = feedback.slideIndex;
+        console.log('[Gemini Slides] Using fallback slideIndex:', targetSlideIndex);
+      } else {
+        console.log('[Gemini Slides] No slideIndex available for feedback:', feedbackId);
+        // スライド移動できないが、通知メッセージを表示
+        alert('このフィードバックにはスライド情報が紐付いていません');
+        return;
+      }
+    }
 
     // スライドに移動（slideIndexを使用）
     if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
@@ -5443,16 +5518,20 @@ ${rawText}`;
       if (currentSlideIndex !== targetSlideIndex) {
         console.log('[Gemini Slides] Moving from slide', currentSlideIndex, 'to', targetSlideIndex);
         navigateToSlideByIndex(targetSlideIndex);
-        // スライド移動後に少し待ってから吹き出しを表示
-        setTimeout(() => {
-          renderTemporaryBubble(feedback, anchor);
-        }, 500);
+        // スライド移動後に少し待ってから吹き出しを表示（アンカーがある場合のみ）
+        if (anchor && anchor.rect) {
+          setTimeout(() => {
+            renderTemporaryBubble(feedback, anchor);
+          }, 500);
+        }
         return;
       }
     }
 
-    // 既に正しいスライドにいる場合、または移動不要な場合
-    renderTemporaryBubble(feedback, anchor);
+    // 既に正しいスライドにいる場合、吹き出しを表示（アンカーがある場合のみ）
+    if (anchor && anchor.rect) {
+      renderTemporaryBubble(feedback, anchor);
+    }
   }
 
   function renderTemporaryBubble(feedback, anchor) {
@@ -5586,7 +5665,13 @@ ${rawText}`;
         badge.textContent = slideLabel;
       }
 
-      header.append(title, badge);
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "feedback-popup-item-delete";
+      deleteButton.innerHTML = "×";
+      deleteButton.dataset.feedbackId = item.id;
+      deleteButton.title = "削除";
+
+      header.append(title, badge, deleteButton);
 
       const summary = document.createElement("div");
       summary.className = "feedback-popup-item-summary";
