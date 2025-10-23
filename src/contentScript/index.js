@@ -2448,27 +2448,55 @@
    * @param {number} retryDelay - リトライ間隔(ms)
    * @returns {Promise<string|null>} タイトル（取得できない場合はnull）
    */
-  async function getPresentationTitle(maxRetries = 3, retryDelay = 500) {
-    // Google Slidesのタイトル要素を探す
+  async function getPresentationTitle(maxRetries = 5, retryDelay = 800) {
+    // Google Slidesのタイトル要素を探す（様々なUIバージョンに対応）
     const titleSelectors = [
       '.docs-title-input',
+      '.docs-title-widget .docs-title-input',
+      'input.docs-title-input',
+      '#docs-title-input-label-inner',
       '[role="textbox"][aria-label*="title"]',
-      '[role="textbox"][aria-label*="タイトル"]'
+      '[role="textbox"][aria-label*="タイトル"]',
+      '[contenteditable="true"][aria-label*="Rename"]',
+      '[contenteditable="true"][aria-label*="名前を変更"]',
+      'div.docs-title-input',
+      '[data-tooltip*="Rename"]',
+      '[data-tooltip*="名前を変更"]'
     ];
+
+    console.log('[getPresentationTitle] Starting title detection...');
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       for (const selector of titleSelectors) {
         const element = document.querySelector(selector);
-        if (element && element.textContent && element.textContent.trim()) {
-          const title = element.textContent.trim();
-          console.log(`[getPresentationTitle] Title found: "${title}" (attempt ${attempt + 1})`);
-          return title;
+        if (element) {
+          const title = (element.textContent || element.value || '').trim();
+          if (title) {
+            console.log(`[getPresentationTitle] ✓ Title found: "${title}" using selector: "${selector}" (attempt ${attempt + 1})`);
+            return title;
+          } else {
+            console.log(`[getPresentationTitle] Element found but empty with selector: "${selector}"`);
+          }
         }
       }
 
       if (attempt < maxRetries - 1) {
         console.log(`[getPresentationTitle] Title not found, retrying in ${retryDelay}ms... (attempt ${attempt + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    // フォールバック: document.titleから取得を試みる
+    console.log('[getPresentationTitle] Trying fallback method: document.title');
+    if (document.title) {
+      // document.titleから " - Google スライド" などの接尾辞を除去
+      const cleanTitle = document.title
+        .replace(/\s*-\s*Google\s+(Slides|スライド|Презентации|Presentaciones).*$/i, '')
+        .trim();
+
+      if (cleanTitle && cleanTitle !== 'Google Slides' && cleanTitle !== 'Googleスライド') {
+        console.log(`[getPresentationTitle] ✓ Title extracted from document.title: "${cleanTitle}"`);
+        return cleanTitle;
       }
     }
 
