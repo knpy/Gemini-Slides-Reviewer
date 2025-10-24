@@ -385,11 +385,13 @@
           width: 360px;
           max-width: 90vw;
           height: 100vh;
-          background: #202124;
-          color: #e8eaed;
-          box-shadow: -2px 0 12px rgba(0,0,0,0.3);
+          background: #F9F9F6;
+          color: #2E3E50;
+          box-shadow: -4px 0 24px rgba(46, 62, 80, 0.12);
+          border-top-left-radius: 16px;
+          border-bottom-left-radius: 16px;
           transform: translateX(100%);
-          transition: transform 0.25s ease-in-out;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           display: flex;
           flex-direction: column;
           z-index: 2147483647;
@@ -399,31 +401,38 @@
           transform: translateX(0);
         }
         .gemini-panel header {
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
+          padding: 16px 20px;
+          background: linear-gradient(135deg, #E8F8F7 0%, #EDF4FB 50%, #F2EFFA 100%);
+          border-bottom: 2px solid #4ECDC4;
+          border-top-left-radius: 16px;
         }
         .gemini-panel header .header-top {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 8px;
+          margin-bottom: 12px;
         }
         .gemini-panel header h1 {
           margin: 0;
-          font-size: 16px;
-          font-weight: 600;
+          font-size: 18px;
+          font-weight: 700;
+          color: #2E3E50;
+          letter-spacing: -0.02em;
         }
         .gemini-panel header .header-top button {
           background: transparent;
           border: none;
-          color: #9aa0a6;
-          font-size: 18px;
+          color: #5A6B7B;
+          font-size: 24px;
           cursor: pointer;
-          padding: 0;
+          padding: 4px;
           line-height: 1;
+          border-radius: 50%;
+          transition: all 0.2s ease;
         }
         .gemini-panel header .header-top button:hover {
-          color: #fff;
+          color: #4ECDC4;
+          background: rgba(78, 205, 196, 0.1);
         }
         .project-selector {
           display: flex;
@@ -432,78 +441,93 @@
         }
         .project-selector label {
           font-size: 12px;
-          color: #9aa0a6;
+          color: #5A6B7B;
           margin: 0;
           white-space: nowrap;
           text-transform: none;
           letter-spacing: normal;
+          font-weight: 600;
         }
         .project-selector select {
           flex: 1;
-          background: #2d2e30;
-          border: 1px solid rgba(138,180,248,0.3);
-          border-radius: 6px;
-          color: #e8eaed;
-          padding: 6px 8px;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          border-radius: 12px;
+          color: #2E3E50;
+          padding: 8px 12px;
           font-size: 13px;
           font-weight: 500;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
         }
         .project-selector select:hover {
-          border-color: rgba(138,180,248,0.5);
-          background: rgba(138,180,248,0.05);
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
         }
         .project-selector select:focus {
           outline: none;
-          border-color: #8ab4f8;
-          background: rgba(138,180,248,0.08);
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 12px rgba(91, 159, 216, 0.3);
         }
         .project-selector select option {
-          background: #2d2e30;
-          color: #e8eaed;
+          background: #FFFFFF;
+          color: #2E3E50;
         }
         .delete-project-button {
-          background: transparent;
-          border: 1px solid rgba(255, 68, 68, 0.3);
-          color: #ff4444;
-          padding: 6px 10px;
-          border-radius: 6px;
+          background: #FFFFFF;
+          border: 2px solid #FFB3A3;
+          color: #EA4335;
+          padding: 8px 12px;
+          border-radius: 12px;
           cursor: pointer;
           font-size: 16px;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
           line-height: 1;
         }
         .delete-project-button:hover {
-          background: rgba(255, 68, 68, 0.1);
-          border-color: rgba(255, 68, 68, 0.5);
+          background: #FFF3F0;
+          border-color: #EA4335;
+          box-shadow: 0 2px 8px rgba(234, 67, 53, 0.2);
         }
         .delete-project-button:active {
-          background: rgba(255, 68, 68, 0.2);
+          background: #FFEBE8;
+          transform: scale(0.98);
         }
         .gemini-panel main {
-          padding: 16px;
+          padding: 20px;
           flex: 1;
           overflow-y: auto;
+          background: #F9F9F6;
         }
         label {
           display: block;
           font-size: 12px;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: #9aa0a6;
-          margin-bottom: 6px;
+          color: #5A6B7B;
+          margin-bottom: 8px;
+          font-weight: 600;
         }
         select, input, textarea {
           width: 100%;
-          background: #2d2e30;
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 6px;
-          color: #e8eaed;
-          padding: 8px;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          border-radius: 12px;
+          color: #2E3E50;
+          padding: 12px;
           font-size: 14px;
           box-sizing: border-box;
           font-family: inherit;
+          transition: all 0.2s ease;
+        }
+        select:hover, input:hover, textarea:hover {
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
+        }
+        select:focus, input:focus, textarea:focus {
+          outline: none;
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 12px rgba(91, 159, 216, 0.3);
         }
         textarea {
           min-height: 140px;
@@ -519,92 +543,127 @@
         }
         .button {
           flex: 1;
-          background: #3b82f6;
+          background: linear-gradient(135deg, #4ECDC4 0%, #5B9FD8 100%);
           border: none;
-          border-radius: 6px;
-          padding: 10px;
+          border-radius: 12px;
+          padding: 12px 16px;
           font-size: 14px;
           font-weight: 600;
           cursor: pointer;
-          color: #fff;
+          color: #FFFFFF;
           text-align: center;
+          transition: all 0.2s ease;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.3);
+        }
+        .button:hover {
+          background: linear-gradient(135deg, #3BB8AF 0%, #4A8BC7 100%);
+          box-shadow: 0 4px 12px rgba(78, 205, 196, 0.4);
+          transform: translateY(-1px);
+        }
+        .button:active {
+          transform: translateY(0);
+          box-shadow: 0 2px 6px rgba(78, 205, 196, 0.3);
         }
         .button.secondary {
-          background: #3c4043;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          color: #2E3E50;
+          box-shadow: none;
+        }
+        .button.secondary:hover {
+          background: #E8F8F7;
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
         }
         .button.danger {
-          background: #d93025;
+          background: #EA4335;
+          box-shadow: 0 2px 8px rgba(234, 67, 53, 0.2);
+        }
+        .button.danger:hover {
+          background: #D33121;
+          box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
         }
         .button:disabled {
-          opacity: 0.65;
-          cursor: progress;
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
         }
         .button.cancel {
-          background: #f59e0b;
+          background: #FFA726;
+          box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
         }
         .button.cancel:hover {
-          background: #d97706;
+          background: #FB8C00;
+          box-shadow: 0 4px 12px rgba(255, 167, 38, 0.3);
         }
         .button.tertiary {
           flex: 0;
-          background: rgba(138,180,248,0.12);
-          border: 1px solid rgba(138,180,248,0.3);
-          color: #8ab4f8;
+          background: rgba(78, 205, 196, 0.1);
+          border: 2px solid #4ECDC4;
+          color: #2E3E50;
           font-size: 12px;
-          padding: 6px 12px;
+          padding: 8px 16px;
+          box-shadow: none;
         }
         .button.tertiary:hover {
-          background: rgba(138,180,248,0.2);
-          border-color: rgba(138,180,248,0.5);
+          background: rgba(78, 205, 196, 0.2);
+          border-color: #5B9FD8;
         }
         .button.tertiary:disabled {
-          opacity: 0.6;
+          opacity: 0.5;
           cursor: not-allowed;
         }
         .progress-bar {
           width: 100%;
-          height: 6px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 3px;
+          height: 8px;
+          background: #E8F8F7;
+          border-radius: 999px;
           overflow: hidden;
-          margin-top: 8px;
+          margin-top: 12px;
           display: none;
+          border: 2px solid #4ECDC4;
         }
         .progress-bar.visible {
           display: block;
         }
         .progress-bar-fill {
           height: 100%;
-          background: linear-gradient(90deg, #3b82f6, #8ab4f8);
+          background: linear-gradient(90deg, #4ECDC4 0%, #5B9FD8 50%, #9B7BC6 100%);
           transition: width 0.3s ease;
           width: 0%;
+          border-radius: 999px;
         }
         .status {
-          margin-top: 12px;
+          margin-top: 16px;
           font-size: 13px;
-          line-height: 1.4;
+          line-height: 1.6;
           white-space: pre-wrap;
-          background: rgba(138,180,248,0.06);
-          border-radius: 6px;
-          padding: 12px;
+          background: #FFFFFF;
+          border-radius: 12px;
+          padding: 14px 16px;
+          color: #2E3E50;
+          border: 2px solid #4ECDC4;
         }
         .status.error {
-          background: rgba(217,48,37,0.12);
-          border: 1px solid rgba(217,48,37,0.3);
+          background: #FFF3F0;
+          border-color: #FFB3A3;
+          color: #EA4335;
         }
         .status.success {
-          border: 1px solid rgba(138, 180, 248, 0.45);
+          background: #E8F8F7;
+          border-color: #4ECDC4;
         }
         .status.empty {
-          background: rgba(154,160,166,0.1);
-          border: 1px dashed rgba(154,160,166,0.4);
+          background: #FFFFFF;
+          border: 2px dashed #4ECDC4;
+          color: #5A6B7B;
         }
         .spinner {
           display: inline-block;
           width: 16px;
           height: 16px;
-          border: 2px solid rgba(138, 180, 248, 0.3);
-          border-top-color: #8ab4f8;
+          border: 3px solid #E8F8F7;
+          border-top-color: #4ECDC4;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
           margin-right: 8px;
@@ -640,26 +699,30 @@
         }
         .tab-nav {
           display: flex;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
-          padding: 0 16px;
+          border-bottom: 2px solid #4ECDC4;
+          padding: 0 20px;
+          background: #FFFFFF;
         }
         .tab-button {
           background: transparent;
           border: none;
-          color: #9aa0a6;
-          padding: 12px 16px;
+          color: #5A6B7B;
+          padding: 14px 20px;
           font-size: 14px;
-          font-weight: 500;
+          font-weight: 600;
           cursor: pointer;
-          border-bottom: 2px solid transparent;
-          transition: all 0.2s;
+          border-bottom: 3px solid transparent;
+          transition: all 0.2s ease;
+          position: relative;
         }
         .tab-button:hover {
-          color: #e8eaed;
+          color: #4ECDC4;
+          background: rgba(78, 205, 196, 0.08);
         }
         .tab-button.active {
-          color: #8ab4f8;
-          border-bottom-color: #8ab4f8;
+          color: #4ECDC4;
+          border-bottom-color: #4ECDC4;
+          background: linear-gradient(180deg, rgba(78, 205, 196, 0.05) 0%, rgba(91, 159, 216, 0.05) 100%);
         }
         .tab-content {
           display: none;
@@ -4606,6 +4669,8 @@ ${rawText}`;
 
     const currentSlideId = getCurrentSlideId();
     const currentSlideIndex = getActiveSlideIndex();
+    const presentationId = extractPresentationId();
+    const currentSlideUrl = window.location.href;
 
     if (!currentSlideId) {
       console.warn('[Gemini Slides] No slideId found in URL');
@@ -4621,13 +4686,19 @@ ${rawText}`;
 
       const enrichedAnchors = item.anchors.map(anchor => ({
         ...anchor,
-        slideId: currentSlideId,      // スライドID
-        slideIndex: currentSlideIndex // フィルムストリップのインデックス（0始まり）
+        slideId: currentSlideId,           // スライドID (例: "g12345678")
+        slideIndex: currentSlideIndex,     // フィルムストリップのインデックス（0始まり）
+        presentationId: presentationId,    // プレゼンテーションID
+        slideUrl: currentSlideUrl          // 完全なURL
       }));
 
       return {
         ...item,
-        anchors: enrichedAnchors
+        anchors: enrichedAnchors,
+        // フィードバック直下にも保存（後方互換性とフォールバック用）
+        slideId: currentSlideId,
+        slideIndex: currentSlideIndex,
+        presentationId: presentationId
       };
     });
   }
@@ -5496,33 +5567,50 @@ ${rawText}`;
 
     // アンカー情報を取得
     const anchors = Array.isArray(feedback.anchors) ? feedback.anchors : [];
+    let targetSlideId = null;
     let targetSlideIndex = null;
     let anchor = null;
 
     // アンカーが存在する場合
     if (anchors.length > 0) {
       anchor = anchors[0]; // 最初のアンカーを使用
+      targetSlideId = anchor.slideId;
       targetSlideIndex = anchor.slideIndex;
     } else {
-      // アンカーがない場合、フィードバック直下のslideIndexを使用（後方互換性）
-      if (typeof feedback.slideIndex === 'number' && feedback.slideIndex >= 0) {
-        targetSlideIndex = feedback.slideIndex;
-        console.log('[Gemini Slides] Using fallback slideIndex:', targetSlideIndex);
-      } else {
-        console.log('[Gemini Slides] No slideIndex available for feedback:', feedbackId);
-        // スライド移動できないが、通知メッセージを表示
-        alert('このフィードバックにはスライド情報が紐付いていません');
-        return;
-      }
+      // アンカーがない場合、フィードバック直下の情報を使用（後方互換性）
+      targetSlideId = feedback.slideId;
+      targetSlideIndex = feedback.slideIndex;
     }
 
-    // スライドに移動（slideIndexを使用）
-    if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
+    // スライド移動の優先順位: slideId > slideIndex > エラー
+    let navigationSuccess = false;
+
+    // 優先順位1: slideIdを使用（最も確実）
+    if (targetSlideId) {
+      const currentSlideId = getCurrentSlideId();
+      if (currentSlideId !== targetSlideId) {
+        console.log('[Gemini Slides] ✓ Navigating by slideId:', currentSlideId, '→', targetSlideId);
+        navigateToSlideById(targetSlideId);
+        navigationSuccess = true;
+        // スライド移動後に少し待ってから吹き出しを表示
+        if (anchor && anchor.rect) {
+          setTimeout(() => {
+            renderTemporaryBubble(feedback, anchor);
+          }, 500);
+        }
+        return;
+      } else {
+        console.log('[Gemini Slides] Already on target slide:', targetSlideId);
+      }
+    }
+    // 優先順位2: slideIndexを使用（フォールバック）
+    else if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
       const currentSlideIndex = getActiveSlideIndex();
       if (currentSlideIndex !== targetSlideIndex) {
-        console.log('[Gemini Slides] Moving from slide', currentSlideIndex, 'to', targetSlideIndex);
+        console.log('[Gemini Slides] ⚠ Navigating by slideIndex (fallback):', currentSlideIndex, '→', targetSlideIndex);
         navigateToSlideByIndex(targetSlideIndex);
-        // スライド移動後に少し待ってから吹き出しを表示（アンカーがある場合のみ）
+        navigationSuccess = true;
+        // スライド移動後に少し待ってから吹き出しを表示
         if (anchor && anchor.rect) {
           setTimeout(() => {
             renderTemporaryBubble(feedback, anchor);
@@ -5530,6 +5618,12 @@ ${rawText}`;
         }
         return;
       }
+    }
+    // スライド情報がない場合
+    else {
+      console.error('[Gemini Slides] ✗ No slide information for feedback:', feedbackId);
+      alert('このフィードバックにはスライド情報が紐付いていません');
+      return;
     }
 
     // 既に正しいスライドにいる場合、吹き出しを表示（アンカーがある場合のみ）
