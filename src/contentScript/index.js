@@ -117,6 +117,27 @@
     state.ui.addPromptButton?.addEventListener("click", addNewPrompt);
     state.ui.closeButton?.addEventListener("click", togglePanel);
     state.ui.openButton?.addEventListener("click", togglePanel);
+    state.ui.feedbackFloatingButton?.addEventListener("click", (e) => {
+      e.stopPropagation(); // Prevent event from bubbling to buttonGroup
+      toggleFeedbackPopup();
+    });
+    state.ui.feedbackPopupList?.addEventListener("click", handleFeedbackPopupClick);
+
+    // Initialize draggable functionality for feedback button group
+    if (state.ui.feedbackButtonGroup) {
+      initializeDraggableFeedbackButton(state.ui.feedbackButtonGroup);
+    }
+
+    // Close popup when clicking outside
+    document.addEventListener("click", (event) => {
+      if (!shadowRoot.contains(event.target)) return;
+      const popup = state.ui.feedbackPopup;
+      const button = state.ui.feedbackFloatingButton;
+      if (!popup || !button) return;
+      if (!popup.contains(event.target) && !button.contains(event.target) && popup.classList.contains("visible")) {
+        toggleFeedbackPopup();
+      }
+    });
 
     // Phase 2: Tab switching
     state.ui.tabButtons?.forEach(button => {
@@ -203,6 +224,160 @@
           border-radius: 50%;
           object-fit: cover;
         }
+        .feedback-button-group {
+          position: fixed;
+          right: 16px;
+          bottom: 104px;
+          width: 56px;
+          height: 56px;
+          cursor: grab;
+          z-index: 2147483646;
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        .feedback-button-group:active {
+          cursor: grabbing;
+        }
+        .gemini-icon-large {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          box-shadow: 0 6px 16px rgba(138,180,248,0.3);
+          object-fit: cover;
+          pointer-events: none;
+        }
+        .feedback-floating-button {
+          position: absolute;
+          top: -4px;
+          left: -4px;
+          background: #8ab4f8;
+          border: 2px solid white;
+          border-radius: 50%;
+          width: 24px;
+          height: 24px;
+          padding: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          cursor: pointer;
+          font-size: 12px;
+          z-index: 1;
+        }
+        .feedback-floating-button:hover {
+          transform: scale(1.1);
+        }
+        .feedback-popup {
+          position: fixed;
+          right: 16px;
+          bottom: 160px;
+          width: 320px;
+          max-height: 400px;
+          background: #fff;
+          border-radius: 12px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+          z-index: 2147483645;
+          opacity: 0;
+          transform: translateY(20px) scale(0.95);
+          transition: opacity 0.2s ease, transform 0.2s ease;
+          pointer-events: none;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .feedback-popup.visible {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+        }
+        .feedback-popup-header {
+          padding: 16px;
+          border-bottom: 1px solid rgba(0,0,0,0.08);
+          font-weight: 600;
+          font-size: 14px;
+          color: #202124;
+        }
+        .feedback-popup-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .feedback-popup-item {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(0,0,0,0.06);
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+        .feedback-popup-item:hover {
+          background: rgba(138,180,248,0.08);
+        }
+        .feedback-popup-item:last-child {
+          border-bottom: none;
+        }
+        .feedback-popup-item-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 4px;
+        }
+        .feedback-popup-item-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #202124;
+          flex: 1;
+        }
+        .feedback-popup-item-badge {
+          font-size: 11px;
+          color: #5f6368;
+          background: rgba(0,0,0,0.05);
+          padding: 2px 8px;
+          border-radius: 10px;
+          margin-left: 8px;
+        }
+        .feedback-popup-item-badge.pinned {
+          color: #8ab4f8;
+          background: rgba(138,180,248,0.12);
+        }
+        .feedback-popup-item-summary {
+          font-size: 12px;
+          color: #5f6368;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .feedback-popup-item-delete {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          color: #5f6368;
+          background: transparent;
+          border: none;
+          padding: 0;
+          margin-left: 8px;
+          flex-shrink: 0;
+          transition: all 0.15s ease;
+        }
+        .feedback-popup-item-delete:hover {
+          background: rgba(234,67,53,0.1);
+          color: #ea4335;
+        }
+        .feedback-popup-empty {
+          padding: 32px 16px;
+          text-align: center;
+          font-size: 13px;
+          color: #9aa0a6;
+        }
         .gemini-panel {
           position: fixed;
           top: 0;
@@ -210,11 +385,13 @@
           width: 360px;
           max-width: 90vw;
           height: 100vh;
-          background: #202124;
-          color: #e8eaed;
-          box-shadow: -2px 0 12px rgba(0,0,0,0.3);
+          background: #F9F9F6;
+          color: #2E3E50;
+          box-shadow: -4px 0 24px rgba(46, 62, 80, 0.12);
+          border-top-left-radius: 16px;
+          border-bottom-left-radius: 16px;
           transform: translateX(100%);
-          transition: transform 0.25s ease-in-out;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           display: flex;
           flex-direction: column;
           z-index: 2147483647;
@@ -224,31 +401,38 @@
           transform: translateX(0);
         }
         .gemini-panel header {
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
+          padding: 16px 20px;
+          background: linear-gradient(135deg, #E8F8F7 0%, #EDF4FB 50%, #F2EFFA 100%);
+          border-bottom: 2px solid #4ECDC4;
+          border-top-left-radius: 16px;
         }
         .gemini-panel header .header-top {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 8px;
+          margin-bottom: 12px;
         }
         .gemini-panel header h1 {
           margin: 0;
-          font-size: 16px;
-          font-weight: 600;
+          font-size: 18px;
+          font-weight: 700;
+          color: #2E3E50;
+          letter-spacing: -0.02em;
         }
         .gemini-panel header .header-top button {
           background: transparent;
           border: none;
-          color: #9aa0a6;
-          font-size: 18px;
+          color: #5A6B7B;
+          font-size: 24px;
           cursor: pointer;
-          padding: 0;
+          padding: 4px;
           line-height: 1;
+          border-radius: 50%;
+          transition: all 0.2s ease;
         }
         .gemini-panel header .header-top button:hover {
-          color: #fff;
+          color: #4ECDC4;
+          background: rgba(78, 205, 196, 0.1);
         }
         .project-selector {
           display: flex;
@@ -257,78 +441,93 @@
         }
         .project-selector label {
           font-size: 12px;
-          color: #9aa0a6;
+          color: #5A6B7B;
           margin: 0;
           white-space: nowrap;
           text-transform: none;
           letter-spacing: normal;
+          font-weight: 600;
         }
         .project-selector select {
           flex: 1;
-          background: #2d2e30;
-          border: 1px solid rgba(138,180,248,0.3);
-          border-radius: 6px;
-          color: #e8eaed;
-          padding: 6px 8px;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          border-radius: 12px;
+          color: #2E3E50;
+          padding: 8px 12px;
           font-size: 13px;
           font-weight: 500;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
         }
         .project-selector select:hover {
-          border-color: rgba(138,180,248,0.5);
-          background: rgba(138,180,248,0.05);
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
         }
         .project-selector select:focus {
           outline: none;
-          border-color: #8ab4f8;
-          background: rgba(138,180,248,0.08);
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 12px rgba(91, 159, 216, 0.3);
         }
         .project-selector select option {
-          background: #2d2e30;
-          color: #e8eaed;
+          background: #FFFFFF;
+          color: #2E3E50;
         }
         .delete-project-button {
-          background: transparent;
-          border: 1px solid rgba(255, 68, 68, 0.3);
-          color: #ff4444;
-          padding: 6px 10px;
-          border-radius: 6px;
+          background: #FFFFFF;
+          border: 2px solid #FFB3A3;
+          color: #EA4335;
+          padding: 8px 12px;
+          border-radius: 12px;
           cursor: pointer;
           font-size: 16px;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
           line-height: 1;
         }
         .delete-project-button:hover {
-          background: rgba(255, 68, 68, 0.1);
-          border-color: rgba(255, 68, 68, 0.5);
+          background: #FFF3F0;
+          border-color: #EA4335;
+          box-shadow: 0 2px 8px rgba(234, 67, 53, 0.2);
         }
         .delete-project-button:active {
-          background: rgba(255, 68, 68, 0.2);
+          background: #FFEBE8;
+          transform: scale(0.98);
         }
         .gemini-panel main {
-          padding: 16px;
+          padding: 20px;
           flex: 1;
           overflow-y: auto;
+          background: #F9F9F6;
         }
         label {
           display: block;
           font-size: 12px;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: #9aa0a6;
-          margin-bottom: 6px;
+          color: #5A6B7B;
+          margin-bottom: 8px;
+          font-weight: 600;
         }
         select, input, textarea {
           width: 100%;
-          background: #2d2e30;
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 6px;
-          color: #e8eaed;
-          padding: 8px;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          border-radius: 12px;
+          color: #2E3E50;
+          padding: 12px;
           font-size: 14px;
           box-sizing: border-box;
           font-family: inherit;
+          transition: all 0.2s ease;
+        }
+        select:hover, input:hover, textarea:hover {
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
+        }
+        select:focus, input:focus, textarea:focus {
+          outline: none;
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 12px rgba(91, 159, 216, 0.3);
         }
         textarea {
           min-height: 140px;
@@ -344,188 +543,127 @@
         }
         .button {
           flex: 1;
-          background: #3b82f6;
+          background: linear-gradient(135deg, #4ECDC4 0%, #5B9FD8 100%);
           border: none;
-          border-radius: 6px;
-          padding: 10px;
+          border-radius: 12px;
+          padding: 12px 16px;
           font-size: 14px;
           font-weight: 600;
           cursor: pointer;
-          color: #fff;
+          color: #FFFFFF;
           text-align: center;
+          transition: all 0.2s ease;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.3);
+        }
+        .button:hover {
+          background: linear-gradient(135deg, #3BB8AF 0%, #4A8BC7 100%);
+          box-shadow: 0 4px 12px rgba(78, 205, 196, 0.4);
+          transform: translateY(-1px);
+        }
+        .button:active {
+          transform: translateY(0);
+          box-shadow: 0 2px 6px rgba(78, 205, 196, 0.3);
         }
         .button.secondary {
-          background: #3c4043;
+          background: #FFFFFF;
+          border: 2px solid #4ECDC4;
+          color: #2E3E50;
+          box-shadow: none;
+        }
+        .button.secondary:hover {
+          background: #E8F8F7;
+          border-color: #5B9FD8;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.2);
         }
         .button.danger {
-          background: #d93025;
+          background: #EA4335;
+          box-shadow: 0 2px 8px rgba(234, 67, 53, 0.2);
+        }
+        .button.danger:hover {
+          background: #D33121;
+          box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
         }
         .button:disabled {
-          opacity: 0.65;
-          cursor: progress;
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
         }
         .button.cancel {
-          background: #f59e0b;
+          background: #FFA726;
+          box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
         }
         .button.cancel:hover {
-          background: #d97706;
+          background: #FB8C00;
+          box-shadow: 0 4px 12px rgba(255, 167, 38, 0.3);
         }
         .button.tertiary {
           flex: 0;
-          background: rgba(138,180,248,0.12);
-          border: 1px solid rgba(138,180,248,0.3);
-          color: #8ab4f8;
+          background: rgba(78, 205, 196, 0.1);
+          border: 2px solid #4ECDC4;
+          color: #2E3E50;
           font-size: 12px;
-          padding: 6px 12px;
+          padding: 8px 16px;
+          box-shadow: none;
         }
         .button.tertiary:hover {
-          background: rgba(138,180,248,0.2);
-          border-color: rgba(138,180,248,0.5);
+          background: rgba(78, 205, 196, 0.2);
+          border-color: #5B9FD8;
         }
         .button.tertiary:disabled {
-          opacity: 0.6;
+          opacity: 0.5;
           cursor: not-allowed;
-        }
-        .feedback-section {
-          border: 1px solid rgba(138,180,248,0.15);
-          border-radius: 8px;
-          padding: 14px 12px;
-          background: rgba(138,180,248,0.06);
-        }
-        .feedback-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .feedback-header-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #e8eaed;
-        }
-        .pin-mode-badge {
-          font-size: 11px;
-          color: #8ab4f8;
-          background: rgba(138,180,248,0.15);
-          border: 1px solid rgba(138,180,248,0.35);
-          border-radius: 999px;
-          padding: 4px 10px;
-        }
-        .feedback-empty {
-          font-size: 12px;
-          color: #9aa0a6;
-          background: rgba(0,0,0,0.15);
-          border-radius: 6px;
-          padding: 12px;
-        }
-        .feedback-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .feedback-item {
-          border-radius: 8px;
-          border: 1px solid rgba(138,180,248,0.2);
-          background: rgba(32,33,36,0.6);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .feedback-item[data-status="pinned"] {
-          border-left: 3px solid #8ab4f8;
-          background: rgba(138,180,248,0.12);
-        }
-        .feedback-item.is-highlighted {
-          box-shadow: 0 0 0 2px rgba(138,180,248,0.5);
-        }
-        .feedback-item.is-arming {
-          border-style: dashed;
-          border-color: rgba(251,188,4,0.6);
-          background: rgba(251,188,4,0.08);
-        }
-        .feedback-meta {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          font-size: 11px;
-          color: #9aa0a6;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-        .feedback-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #e8eaed;
-        }
-        .feedback-summary {
-          font-size: 12px;
-          color: #e8eaed;
-          line-height: 1.5;
-          margin: 0;
-          white-space: pre-wrap;
-        }
-        .feedback-actions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-        .feedback-actions .button {
-          flex: 1;
-          min-width: 120px;
-        }
-        .feedback-actions .button.tertiary {
-          flex: 0;
         }
         .progress-bar {
           width: 100%;
-          height: 6px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 3px;
+          height: 8px;
+          background: #E8F8F7;
+          border-radius: 999px;
           overflow: hidden;
-          margin-top: 8px;
+          margin-top: 12px;
           display: none;
+          border: 2px solid #4ECDC4;
         }
         .progress-bar.visible {
           display: block;
         }
         .progress-bar-fill {
           height: 100%;
-          background: linear-gradient(90deg, #3b82f6, #8ab4f8);
+          background: linear-gradient(90deg, #4ECDC4 0%, #5B9FD8 50%, #9B7BC6 100%);
           transition: width 0.3s ease;
           width: 0%;
+          border-radius: 999px;
         }
         .status {
-          margin-top: 12px;
+          margin-top: 16px;
           font-size: 13px;
-          line-height: 1.4;
+          line-height: 1.6;
           white-space: pre-wrap;
-          background: rgba(138,180,248,0.06);
-          border-radius: 6px;
-          padding: 12px;
+          background: #FFFFFF;
+          border-radius: 12px;
+          padding: 14px 16px;
+          color: #2E3E50;
+          border: 2px solid #4ECDC4;
         }
         .status.error {
-          background: rgba(217,48,37,0.12);
-          border: 1px solid rgba(217,48,37,0.3);
+          background: #FFF3F0;
+          border-color: #FFB3A3;
+          color: #EA4335;
         }
         .status.success {
-          border: 1px solid rgba(138, 180, 248, 0.45);
+          background: #E8F8F7;
+          border-color: #4ECDC4;
         }
         .status.empty {
-          background: rgba(154,160,166,0.1);
-          border: 1px dashed rgba(154,160,166,0.4);
+          background: #FFFFFF;
+          border: 2px dashed #4ECDC4;
+          color: #5A6B7B;
         }
         .spinner {
           display: inline-block;
           width: 16px;
           height: 16px;
-          border: 2px solid rgba(138, 180, 248, 0.3);
-          border-top-color: #8ab4f8;
+          border: 3px solid #E8F8F7;
+          border-top-color: #4ECDC4;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
           margin-right: 8px;
@@ -561,26 +699,30 @@
         }
         .tab-nav {
           display: flex;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
-          padding: 0 16px;
+          border-bottom: 2px solid #4ECDC4;
+          padding: 0 20px;
+          background: #FFFFFF;
         }
         .tab-button {
           background: transparent;
           border: none;
-          color: #9aa0a6;
-          padding: 12px 16px;
+          color: #5A6B7B;
+          padding: 14px 20px;
           font-size: 14px;
-          font-weight: 500;
+          font-weight: 600;
           cursor: pointer;
-          border-bottom: 2px solid transparent;
-          transition: all 0.2s;
+          border-bottom: 3px solid transparent;
+          transition: all 0.2s ease;
+          position: relative;
         }
         .tab-button:hover {
-          color: #e8eaed;
+          color: #4ECDC4;
+          background: rgba(78, 205, 196, 0.08);
         }
         .tab-button.active {
-          color: #8ab4f8;
-          border-bottom-color: #8ab4f8;
+          color: #4ECDC4;
+          border-bottom-color: #4ECDC4;
+          background: linear-gradient(180deg, rgba(78, 205, 196, 0.05) 0%, rgba(91, 159, 216, 0.05) 100%);
         }
         .tab-content {
           display: none;
@@ -1006,13 +1148,23 @@
           font-size: 11px;
         }
       </style>
-      <button class=\"gemini-floating-button\" aria-haspopup=\"true\" aria-label=\"Gemini check\">
-        <img id=\"gemini-icon-img\" src=\"\" alt=\"Gemini icon\" />
-      </button>
-      <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"Gemini Slides Reviewer\">
+      <div class=\"feedback-button-group\">
+        <img id=\"gemini-icon-large\" src=\"\" alt=\"Gemini icon\" class=\"gemini-icon-large\" />
+        <button class=\"feedback-floating-button\" aria-haspopup=\"true\" aria-label=\"フィードバック一覧\" title=\"けんしろうAIからの指摘を表示\">
+          💬
+        </button>
+      </div>
+      <div class=\"feedback-popup\" role=\"dialog\" aria-label=\"フィードバック一覧\">
+        <div class=\"feedback-popup-header\">けんしろうAIからの指摘</div>
+        <ul class=\"feedback-popup-list\" id=\"feedback-popup-list\"></ul>
+        <div class=\"feedback-popup-empty\" id=\"feedback-popup-empty\">
+          レビューを実行すると指摘がここに表示されます
+        </div>
+      </div>
+      <section class=\"gemini-panel\" role=\"complementary\" aria-label=\"けんしろうAI\">
         <header>
           <div class=\"header-top\">
-            <h1>Gemini Slides Reviewer</h1>
+            <h1>けんしろうAI</h1>
             <button type=\"button\" aria-label=\"Close panel\">×</button>
           </div>
           <div class=\"project-selector\">
@@ -1057,16 +1209,6 @@
           <section class=\"field\">
             <label>Result</label>
             <div id=\"gemini-result\" class=\"status empty\">No checks run yet.</div>
-          </section>
-          <section class=\"field feedback-section\" aria-labelledby=\"gemini-feedback-title\">
-            <div class=\"feedback-header\">
-              <span id=\"gemini-feedback-title\" class=\"feedback-header-title\">AIからの指摘</span>
-              <span id=\"pin-mode-badge\" class=\"pin-mode-badge\" hidden>ピン留めモード</span>
-            </div>
-            <div id=\"gemini-feedback-empty\" class=\"feedback-empty\">
-              レビューを実行すると指摘がここに表示されます。ピン留めするとスライド上に位置を記録できます。
-            </div>
-            <ul id=\"gemini-feedback-list\" class=\"feedback-list\" aria-live=\"polite\"></ul>
           </section>
         </div>
 
@@ -1129,7 +1271,7 @@
   }
 
   function bindUI() {
-    state.ui.openButton = shadowRoot.querySelector(".gemini-floating-button");
+    state.ui.openButton = shadowRoot.querySelector(".feedback-button-group");
     state.ui.panel = shadowRoot.querySelector(".gemini-panel");
     state.ui.closeButton = shadowRoot.querySelector("header button");
     state.ui.promptSelect = shadowRoot.querySelector("#gemini-prompt-select");
@@ -1142,14 +1284,19 @@
     state.ui.resetPromptButton = shadowRoot.querySelector("#gemini-reset-prompt");
     state.ui.result = shadowRoot.querySelector("#gemini-result");
     state.ui.screenshotPreview = shadowRoot.querySelector("#gemini-screenshot-preview");
-    state.ui.feedbackList = shadowRoot.querySelector("#gemini-feedback-list");
-    state.ui.feedbackEmpty = shadowRoot.querySelector("#gemini-feedback-empty");
-    state.ui.pinModeBadge = shadowRoot.querySelector("#pin-mode-badge");
-    if (state.ui.feedbackEmpty) {
-      state.ui.feedbackEmpty.hidden = false;
+
+    // Feedback popup elements
+    state.ui.feedbackButtonGroup = shadowRoot.querySelector(".feedback-button-group");
+    state.ui.feedbackFloatingButton = shadowRoot.querySelector(".feedback-floating-button");
+    state.ui.feedbackPopup = shadowRoot.querySelector(".feedback-popup");
+    state.ui.feedbackPopupList = shadowRoot.querySelector("#feedback-popup-list");
+    state.ui.feedbackPopupEmpty = shadowRoot.querySelector("#feedback-popup-empty");
+
+    if (state.ui.feedbackPopupEmpty) {
+      state.ui.feedbackPopupEmpty.hidden = false;
     }
-    if (state.ui.feedbackList) {
-      state.ui.feedbackList.hidden = true;
+    if (state.ui.feedbackPopupList) {
+      state.ui.feedbackPopupList.hidden = true;
     }
 
     // Phase 2: Context tab elements
@@ -1167,6 +1314,11 @@
     const iconImg = shadowRoot.querySelector("#gemini-icon-img");
     if (iconImg) {
       iconImg.src = chrome.runtime.getURL('assets/gemini-icon.png');
+    }
+
+    const geminiIconLarge = shadowRoot.querySelector("#gemini-icon-large");
+    if (geminiIconLarge) {
+      geminiIconLarge.src = chrome.runtime.getURL('assets/gemini-icon.png');
     }
   }
 
@@ -1775,16 +1927,18 @@
     // Capture screenshot of current slide
     const screenshot = await captureSlideScreenshot();
 
-    // Get slide number (use provided or detect)
+    // Get slide ID, index, and number (use provided or detect)
+    const slideId = getCurrentSlideId();
+    const slideIndex = getActiveSlideIndex();  // 0-based index
     let finalSlideNumber = slideNumber;
     if (!finalSlideNumber) {
-      const slideNodes = getSlideOptionNodes();
-      const activeOrder = getActiveSlideOrder(slideNodes);
-      finalSlideNumber = activeOrder !== -1 ? activeOrder + 1 : 1;
+      finalSlideNumber = getCurrentSlidePageNumber();
     }
 
     summary.slides.push({
       number: finalSlideNumber,
+      slideId: slideId,
+      slideIndex: slideIndex,  // フィルムストリップでのインデックス（0始まり）
       screenshot: screenshot
     });
 
@@ -2357,27 +2511,55 @@
    * @param {number} retryDelay - リトライ間隔(ms)
    * @returns {Promise<string|null>} タイトル（取得できない場合はnull）
    */
-  async function getPresentationTitle(maxRetries = 3, retryDelay = 500) {
-    // Google Slidesのタイトル要素を探す
+  async function getPresentationTitle(maxRetries = 5, retryDelay = 800) {
+    // Google Slidesのタイトル要素を探す（様々なUIバージョンに対応）
     const titleSelectors = [
       '.docs-title-input',
+      '.docs-title-widget .docs-title-input',
+      'input.docs-title-input',
+      '#docs-title-input-label-inner',
       '[role="textbox"][aria-label*="title"]',
-      '[role="textbox"][aria-label*="タイトル"]'
+      '[role="textbox"][aria-label*="タイトル"]',
+      '[contenteditable="true"][aria-label*="Rename"]',
+      '[contenteditable="true"][aria-label*="名前を変更"]',
+      'div.docs-title-input',
+      '[data-tooltip*="Rename"]',
+      '[data-tooltip*="名前を変更"]'
     ];
+
+    console.log('[getPresentationTitle] Starting title detection...');
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       for (const selector of titleSelectors) {
         const element = document.querySelector(selector);
-        if (element && element.textContent && element.textContent.trim()) {
-          const title = element.textContent.trim();
-          console.log(`[getPresentationTitle] Title found: "${title}" (attempt ${attempt + 1})`);
-          return title;
+        if (element) {
+          const title = (element.textContent || element.value || '').trim();
+          if (title) {
+            console.log(`[getPresentationTitle] ✓ Title found: "${title}" using selector: "${selector}" (attempt ${attempt + 1})`);
+            return title;
+          } else {
+            console.log(`[getPresentationTitle] Element found but empty with selector: "${selector}"`);
+          }
         }
       }
 
       if (attempt < maxRetries - 1) {
         console.log(`[getPresentationTitle] Title not found, retrying in ${retryDelay}ms... (attempt ${attempt + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
+    // フォールバック: document.titleから取得を試みる
+    console.log('[getPresentationTitle] Trying fallback method: document.title');
+    if (document.title) {
+      // document.titleから " - Google スライド" などの接尾辞を除去
+      const cleanTitle = document.title
+        .replace(/\s*-\s*Google\s+(Slides|スライド|Презентации|Presentaciones).*$/i, '')
+        .trim();
+
+      if (cleanTitle && cleanTitle !== 'Google Slides' && cleanTitle !== 'Googleスライド') {
+        console.log(`[getPresentationTitle] ✓ Title extracted from document.title: "${cleanTitle}"`);
+        return cleanTitle;
       }
     }
 
@@ -4003,10 +4185,6 @@ ${rawText}`;
     injectPinStyles();
     ensurePinOverlay();
 
-    if (state.ui.feedbackList) {
-      state.ui.feedbackList.addEventListener("click", handleFeedbackListClick);
-    }
-
     document.addEventListener("keydown", handlePinKeydown, true);
 
     if (!state.pinResizeHandler) {
@@ -4145,9 +4323,9 @@ ${rawText}`;
   color: #202124;
 }
 #gemini-pin-overlay .gemini-pin__bubble {
-  position: relative;
-  min-width: 200px;
-  max-width: 260px;
+  position: absolute;
+  min-width: 150px;
+  max-width: 220px;
   background: rgba(32,33,36,0.92);
   color: #e8eaed;
   border: 1px solid rgba(138,180,248,0.35);
@@ -4156,35 +4334,100 @@ ${rawText}`;
   box-shadow: 0 12px 24px rgba(0,0,0,0.35);
   opacity: 0;
   visibility: hidden;
-  transform: translateY(8px);
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
   pointer-events: auto;
   box-sizing: border-box;
   z-index: 2;
+  white-space: nowrap;
 }
+
+/* デフォルト位置: 右側 */
+#gemini-pin-overlay .gemini-pin__bubble[data-position="right"] {
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="left"] {
+  right: calc(100% + 12px);
+  top: 50%;
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="top"] {
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+#gemini-pin-overlay .gemini-pin__bubble[data-position="bottom"] {
+  top: calc(100% + 12px);
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+
+/* 矢印の位置調整 */
 #gemini-pin-overlay .gemini-pin__bubble::before {
   content: '';
   position: absolute;
-  top: -6px;
-  left: calc(50% - 6px);
   width: 12px;
   height: 12px;
   background: rgba(32,33,36,0.92);
-  border-left: 1px solid rgba(138,180,248,0.35);
-  border-top: 1px solid rgba(138,180,248,0.35);
+  border: 1px solid rgba(138,180,248,0.35);
   transform: rotate(45deg);
+}
+/* 右側表示時: 矢印は左 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-left"]::before {
+  left: -6px;
+  top: calc(50% - 6px);
+  border-right: none;
+  border-bottom: none;
+}
+/* 左側表示時: 矢印は右 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-right"]::before {
+  right: -6px;
+  top: calc(50% - 6px);
+  border-left: none;
+  border-top: none;
+}
+/* 上側表示時: 矢印は下 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-bottom"]::before {
+  bottom: -6px;
+  left: calc(50% - 6px);
+  border-top: none;
+  border-left: none;
+}
+/* 下側表示時: 矢印は上 */
+#gemini-pin-overlay .gemini-pin__bubble[data-arrow-class="arrow-top"]::before {
+  top: -6px;
+  left: calc(50% - 6px);
+  border-bottom: none;
+  border-right: none;
 }
 #gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble,
 #gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+}
+/* 位置ごとのホバー時トランスフォーム */
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="right"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="right"] {
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="left"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="left"] {
+  transform: translate(0, -50%);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="top"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="top"] {
+  transform: translate(-50%, 0);
+}
+#gemini-pin-overlay .gemini-pin.is-open .gemini-pin__bubble[data-position="bottom"],
+#gemini-pin-overlay .gemini-pin:hover .gemini-pin__bubble[data-position="bottom"] {
+  transform: translate(-50%, 0);
 }
 #gemini-pin-overlay .gemini-pin__bubble-title {
   font-size: 12px;
   font-weight: 600;
   display: block;
-  margin-bottom: 4px;
+  margin: 0;
 }
 #gemini-pin-overlay .gemini-pin__bubble-body {
   font-size: 11px;
@@ -4222,6 +4465,91 @@ ${rawText}`;
 }
 #gemini-pin-overlay .gemini-pin-overlay__hint button:hover {
   background: rgba(95,99,104,0.8);
+}
+
+/* 一時的な吹き出しのスタイル */
+.gemini-temp-bubble {
+  position: absolute;
+  min-width: 200px;
+  max-width: 320px;
+  background: rgba(32,33,36,0.95);
+  color: #e8eaed;
+  border: 1px solid rgba(138,180,248,0.4);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  pointer-events: auto;
+  z-index: 10;
+  animation: bubbleFadeIn 0.3s ease;
+}
+
+@keyframes bubbleFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gemini-temp-bubble-content {
+  padding: 16px;
+  position: relative;
+}
+
+.gemini-temp-bubble-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8ab4f8;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.gemini-temp-bubble-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e8eaed;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.gemini-temp-bubble-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #9aa0a6;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.gemini-temp-bubble-close:hover {
+  color: #e8eaed;
+}
+
+/* 一時的なハイライト矩形 */
+.gemini-temp-highlight {
+  position: absolute;
+  border: 2px solid rgba(138,180,248,0.8);
+  background: rgba(138,180,248,0.15);
+  box-shadow: 0 8px 20px rgba(138,180,248,0.3);
+  border-radius: 8px;
+  pointer-events: none;
+  animation: highlightPulse 2s ease infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 `;
     document.head.appendChild(style);
@@ -4325,8 +4653,54 @@ ${rawText}`;
   function updateFeedbackFromResult(text) {
     const items = parseGeminiFeedbackText(text);
     console.log('[Gemini Slides] Parsed feedback items:', items);
-    setFeedbackItems(items);
-    focusInitialAnchor(items);
+    const enrichedItems = enrichFeedbackWithSlideIds(items);
+    console.log('[Gemini Slides] Enriched with slideIds:', enrichedItems);
+    setFeedbackItems(enrichedItems);
+    focusInitialAnchor(enrichedItems);
+  }
+
+  /**
+   * フィードバックアイテムのanchorsに現在のslideIdを追加
+   * @param {Array} items - フィードバックアイテムの配列
+   * @returns {Array} slideIdが追加されたフィードバックアイテムの配列
+   */
+  function enrichFeedbackWithSlideIds(items) {
+    if (!Array.isArray(items)) return items;
+
+    const currentSlideId = getCurrentSlideId();
+    const currentSlideIndex = getActiveSlideIndex();
+    const presentationId = extractPresentationId();
+    const currentSlideUrl = window.location.href;
+
+    if (!currentSlideId) {
+      console.warn('[Gemini Slides] No slideId found in URL');
+    }
+    if (currentSlideIndex < 0) {
+      console.warn('[Gemini Slides] No valid slideIndex found');
+    }
+
+    return items.map(item => {
+      if (!Array.isArray(item.anchors) || item.anchors.length === 0) {
+        return item;
+      }
+
+      const enrichedAnchors = item.anchors.map(anchor => ({
+        ...anchor,
+        slideId: currentSlideId,           // スライドID (例: "g12345678")
+        slideIndex: currentSlideIndex,     // フィルムストリップのインデックス（0始まり）
+        presentationId: presentationId,    // プレゼンテーションID
+        slideUrl: currentSlideUrl          // 完全なURL
+      }));
+
+      return {
+        ...item,
+        anchors: enrichedAnchors,
+        // フィードバック直下にも保存（後方互換性とフォールバック用）
+        slideId: currentSlideId,
+        slideIndex: currentSlideIndex,
+        presentationId: presentationId
+      };
+    });
   }
 
   function appendFeedbackFormatInstructions(promptText) {
@@ -4956,28 +5330,8 @@ ${rawText}`;
   }
 
   function formatSlideLabel(anchors, fallbackSlidePage) {
-    const pages = new Set();
-    if (Array.isArray(anchors)) {
-      anchors.forEach((anchor) => {
-        const page = Number(anchor?.slidePage);
-        if (page && !Number.isNaN(page)) {
-          pages.add(page);
-        }
-      });
-    }
-    if ((!pages.size) && fallbackSlidePage) {
-      const fallback = Number(fallbackSlidePage);
-      if (!Number.isNaN(fallback)) {
-        pages.add(fallback);
-      }
-    }
-    if (!pages.size) {
-      return "位置情報なし";
-    }
-    return Array.from(pages)
-      .sort((a, b) => a - b)
-      .map((page) => `Slide ${page}`)
-      .join(", ");
+    // スライド番号の表示は不要になったため、空文字列を返す
+    return "";
   }
 
   function normalizeAnchor(anchor) {
@@ -5029,11 +5383,349 @@ ${rawText}`;
     return Array.isArray(feedback?.anchors) ? feedback.anchors : [];
   }
 
-  function renderFeedbackList() {
-    if (!state.ui.feedbackList || !state.ui.feedbackEmpty) return;
+  function toggleFeedbackPopup() {
+    const popup = state.ui.feedbackPopup;
+    if (!popup) return;
+    popup.classList.toggle("visible");
+  }
 
-    const list = state.ui.feedbackList;
-    const emptyState = state.ui.feedbackEmpty;
+  function initializeDraggableFeedbackButton(buttonGroup) {
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let buttonStartX = 0;
+    let buttonStartY = 0;
+    let hasMoved = false;
+
+    // ページリロード時は常に右下(デフォルト位置)に配置
+    // 位置復元処理は削除
+
+    const handleMouseDown = (e) => {
+      // Only allow dragging with left mouse button
+      if (e.button !== 0) return;
+
+      isDragging = true;
+      hasMoved = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+
+      const rect = buttonGroup.getBoundingClientRect();
+      buttonStartX = rect.left;
+      buttonStartY = rect.top;
+
+      buttonGroup.style.cursor = 'grabbing';
+      e.preventDefault();
+    };
+
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+
+      // Mark as moved if dragged more than 5px
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        hasMoved = true;
+      }
+
+      const newX = buttonStartX + deltaX;
+      const newY = buttonStartY + deltaY;
+
+      // Constrain to viewport bounds
+      const maxX = window.innerWidth - buttonGroup.offsetWidth;
+      const maxY = window.innerHeight - buttonGroup.offsetHeight;
+
+      const constrainedX = Math.max(0, Math.min(newX, maxX));
+      const constrainedY = Math.max(0, Math.min(newY, maxY));
+
+      buttonGroup.style.right = 'auto';
+      buttonGroup.style.bottom = 'auto';
+      buttonGroup.style.left = `${constrainedX}px`;
+      buttonGroup.style.top = `${constrainedY}px`;
+
+      e.preventDefault();
+    };
+
+    const handleMouseUp = (e) => {
+      if (!isDragging) return;
+
+      isDragging = false;
+      buttonGroup.style.cursor = 'grab';
+
+      // 位置保存処理は削除（ページリロード時に右下にリセットするため）
+
+      // Prevent click event if button was dragged
+      if (hasMoved) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Add a temporary flag to prevent click
+        buttonGroup.dataset.justDragged = 'true';
+        setTimeout(() => {
+          delete buttonGroup.dataset.justDragged;
+        }, 100);
+      }
+    };
+
+    // Prevent click when just dragged
+    const handleClick = (e) => {
+      if (buttonGroup.dataset.justDragged === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    buttonGroup.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    buttonGroup.addEventListener('click', handleClick, true);
+
+    // Cleanup function
+    return () => {
+      buttonGroup.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      buttonGroup.removeEventListener('click', handleClick, true);
+    };
+  }
+
+  // 位置保存/読み込み関数は削除（ページリロード時に右下にリセットするため）
+
+  async function handleFeedbackDelete(feedbackId) {
+    if (!feedbackId) return;
+
+    // フィードバックアイテムを削除
+    state.feedbackItems = state.feedbackItems.filter((item) => item.id !== feedbackId);
+
+    // 関連するピンを削除
+    Object.keys(state.pinsBySlide).forEach((slideKey) => {
+      state.pinsBySlide[slideKey] = state.pinsBySlide[slideKey].filter(
+        (pin) => pin.feedbackId !== feedbackId
+      );
+      // 空になったスライドキーを削除
+      if (state.pinsBySlide[slideKey].length === 0) {
+        delete state.pinsBySlide[slideKey];
+      }
+    });
+
+    // ストレージに保存
+    const presentationId = extractPresentationId(window.location.href);
+    if (presentationId) {
+      await savePinsToStorage(presentationId, state.pinsBySlide);
+      await saveFeedbackToStorage(presentationId, state.feedbackItems);
+    }
+
+    // UIを更新
+    renderFeedbackList();
+    renderPinsForCurrentSlide();
+    updatePinOverlayVisibility();
+
+    console.log('[Feedback] Deleted feedback:', feedbackId);
+  }
+
+  function handleFeedbackPopupClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    // 削除ボタンがクリックされた場合
+    const deleteButton = target.closest(".feedback-popup-item-delete");
+    if (deleteButton) {
+      event.stopPropagation();
+      const feedbackId = deleteButton.dataset.feedbackId;
+      if (feedbackId) {
+        handleFeedbackDelete(feedbackId);
+      }
+      return;
+    }
+
+    const item = target.closest(".feedback-popup-item");
+    if (!item) return;
+
+    const feedbackId = item.dataset.feedbackId;
+    if (!feedbackId) return;
+
+    // Close popup
+    if (state.ui.feedbackPopup?.classList.contains("visible")) {
+      toggleFeedbackPopup();
+    }
+
+    // Show temporary bubble for clicked feedback only
+    showTemporaryFeedbackBubble(feedbackId);
+  }
+
+  function showTemporaryFeedbackBubble(feedbackId) {
+    if (!feedbackId) return;
+
+    // 既存の一時的な吹き出しを削除
+    const existingBubble = document.getElementById("gemini-temp-feedback-bubble");
+    if (existingBubble) {
+      existingBubble.remove();
+    }
+
+    // フィードバックアイテムを取得
+    const feedback = state.feedbackItems.find((item) => item.id === feedbackId);
+    if (!feedback) return;
+
+    // アンカー情報を取得
+    const anchors = Array.isArray(feedback.anchors) ? feedback.anchors : [];
+    let targetSlideId = null;
+    let targetSlideIndex = null;
+    let anchor = null;
+
+    // アンカーが存在する場合
+    if (anchors.length > 0) {
+      anchor = anchors[0]; // 最初のアンカーを使用
+      targetSlideId = anchor.slideId;
+      targetSlideIndex = anchor.slideIndex;
+    } else {
+      // アンカーがない場合、フィードバック直下の情報を使用（後方互換性）
+      targetSlideId = feedback.slideId;
+      targetSlideIndex = feedback.slideIndex;
+    }
+
+    // スライド移動の優先順位: slideId > slideIndex > エラー
+    let navigationSuccess = false;
+
+    // 優先順位1: slideIdを使用（最も確実）
+    if (targetSlideId) {
+      const currentSlideId = getCurrentSlideId();
+      if (currentSlideId !== targetSlideId) {
+        console.log('[Gemini Slides] ✓ Navigating by slideId:', currentSlideId, '→', targetSlideId);
+        navigateToSlideById(targetSlideId);
+        navigationSuccess = true;
+        // スライド移動後に少し待ってから吹き出しを表示
+        if (anchor && anchor.rect) {
+          setTimeout(() => {
+            renderTemporaryBubble(feedback, anchor);
+          }, 500);
+        }
+        return;
+      } else {
+        console.log('[Gemini Slides] Already on target slide:', targetSlideId);
+      }
+    }
+    // 優先順位2: slideIndexを使用（フォールバック）
+    else if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
+      const currentSlideIndex = getActiveSlideIndex();
+      if (currentSlideIndex !== targetSlideIndex) {
+        console.log('[Gemini Slides] ⚠ Navigating by slideIndex (fallback):', currentSlideIndex, '→', targetSlideIndex);
+        navigateToSlideByIndex(targetSlideIndex);
+        navigationSuccess = true;
+        // スライド移動後に少し待ってから吹き出しを表示
+        if (anchor && anchor.rect) {
+          setTimeout(() => {
+            renderTemporaryBubble(feedback, anchor);
+          }, 500);
+        }
+        return;
+      }
+    }
+    // スライド情報がない場合
+    else {
+      console.error('[Gemini Slides] ✗ No slide information for feedback:', feedbackId);
+      alert('このフィードバックにはスライド情報が紐付いていません');
+      return;
+    }
+
+    // 既に正しいスライドにいる場合、吹き出しを表示（アンカーがある場合のみ）
+    if (anchor && anchor.rect) {
+      renderTemporaryBubble(feedback, anchor);
+    }
+  }
+
+  function renderTemporaryBubble(feedback, anchor) {
+    if (!state.pinOverlay || !anchor.rect) return;
+
+    updatePinOverlayBounds();
+
+    // 一時的な吹き出しを作成
+    const bubble = document.createElement("div");
+    bubble.id = "gemini-temp-feedback-bubble";
+    bubble.className = "gemini-temp-bubble";
+
+    // 矩形の位置を計算
+    const rectX = (anchor.rect.x || 0) + (anchor.rect.width || 0) / 2;
+    const rectY = (anchor.rect.y || 0);
+
+    // 吹き出しの位置を自動計算
+    const bubblePos = calculateBubblePosition(rectX, rectY);
+
+    // 吹き出しのスタイルを設定
+    bubble.style.position = "absolute";
+    bubble.style.left = `${rectX * 100}%`;
+    bubble.style.top = `${rectY * 100}%`;
+    bubble.style.transform = getBubbleTransform(bubblePos.position);
+    bubble.dataset.position = bubblePos.position;
+    bubble.dataset.arrowClass = bubblePos.arrowClass;
+
+    // コンテンツを作成
+    const content = document.createElement("div");
+    content.className = "gemini-temp-bubble-content";
+
+    const title = document.createElement("div");
+    title.className = "gemini-temp-bubble-title";
+    title.textContent = feedback.title || "フィードバック";
+
+    const body = document.createElement("div");
+    body.className = "gemini-temp-bubble-body";
+    body.textContent = feedback.summary || feedback.body || "";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "gemini-temp-bubble-close";
+    closeBtn.textContent = "×";
+    closeBtn.onclick = () => bubble.remove();
+
+    content.append(title, body, closeBtn);
+    bubble.appendChild(content);
+
+    // ハイライト矩形を作成
+    if (state.pinOverlayTargets && anchor.rect) {
+      const highlight = document.createElement("div");
+      highlight.className = "gemini-temp-highlight";
+      highlight.style.left = `${(anchor.rect.x || 0) * 100}%`;
+      highlight.style.top = `${(anchor.rect.y || 0) * 100}%`;
+      highlight.style.width = `${(anchor.rect.width || 0) * 100}%`;
+      highlight.style.height = `${(anchor.rect.height || 0) * 100}%`;
+      state.pinOverlayTargets.appendChild(highlight);
+
+      // 5秒後に削除
+      setTimeout(() => {
+        highlight.remove();
+      }, 5000);
+    }
+
+    state.pinOverlay.appendChild(bubble);
+
+    // 5秒後に自動的に削除
+    setTimeout(() => {
+      bubble.remove();
+    }, 5000);
+
+    // オーバーレイを表示
+    if (state.pinOverlay) {
+      state.pinOverlay.classList.add("is-visible");
+    }
+  }
+
+  function getBubbleTransform(position) {
+    switch (position) {
+      case "right":
+        return "translate(12px, -50%)";
+      case "left":
+        return "translate(calc(-100% - 12px), -50%)";
+      case "top":
+        return "translate(-50%, calc(-100% - 12px))";
+      case "bottom":
+        return "translate(-50%, 12px)";
+      default:
+        return "translate(12px, -50%)";
+    }
+  }
+
+  function renderFeedbackPopup() {
+    if (!state.ui.feedbackPopupList || !state.ui.feedbackPopupEmpty) return;
+
+    const list = state.ui.feedbackPopupList;
+    const emptyState = state.ui.feedbackPopupEmpty;
     const items = Array.isArray(state.feedbackItems) ? state.feedbackItems : [];
 
     list.innerHTML = "";
@@ -5041,7 +5733,6 @@ ${rawText}`;
     if (!items.length) {
       emptyState.hidden = false;
       list.hidden = true;
-      updatePinModeBadge();
       return;
     }
 
@@ -5050,100 +5741,48 @@ ${rawText}`;
 
     items.forEach((item, index) => {
       const li = document.createElement("li");
-      li.className = "feedback-item";
+      li.className = "feedback-popup-item";
       li.dataset.feedbackId = item.id;
+
+      const header = document.createElement("div");
+      header.className = "feedback-popup-item-header";
+
+      const title = document.createElement("div");
+      title.className = "feedback-popup-item-title";
+      title.textContent = item.title || `指摘 ${index + 1}`;
 
       const anchors = Array.isArray(item.anchors) ? item.anchors : [];
       const slideLabel = formatSlideLabel(anchors, item.slidePage);
 
-      if (isFeedbackPinned(item.id)) {
-        li.dataset.status = "pinned";
+      const badge = document.createElement("span");
+      badge.className = "feedback-popup-item-badge";
+      if (anchors.length > 0) {
+        badge.classList.add("pinned");
+        badge.textContent = `📍 ${slideLabel}`;
+      } else {
+        badge.textContent = slideLabel;
       }
 
-      const meta = document.createElement("div");
-      meta.className = "feedback-meta";
-      const orderSpan = document.createElement("span");
-      orderSpan.textContent = `指摘 ${index + 1}`;
-      const slideSpan = document.createElement("span");
-      slideSpan.textContent = slideLabel;
-      meta.append(orderSpan, slideSpan);
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "feedback-popup-item-delete";
+      deleteButton.innerHTML = "×";
+      deleteButton.dataset.feedbackId = item.id;
+      deleteButton.title = "削除";
 
-      const title = document.createElement("div");
-      title.className = "feedback-title";
-      title.textContent = item.title || `指摘 ${index + 1}`;
+      header.append(title, badge, deleteButton);
 
-      const summary = document.createElement("p");
-      summary.className = "feedback-summary";
+      const summary = document.createElement("div");
+      summary.className = "feedback-popup-item-summary";
       summary.textContent = item.summary || item.body || "";
 
-      const actions = document.createElement("div");
-      actions.className = "feedback-actions";
-
-      const focusButton = document.createElement("button");
-      focusButton.className = "button tertiary";
-      focusButton.type = "button";
-      focusButton.dataset.action = "focus";
-      focusButton.dataset.feedbackId = item.id;
-      focusButton.disabled = anchors.length === 0;
-      if (anchors.length === 0) {
-        focusButton.textContent = "位置情報なし";
-      } else if (anchors.length === 1) {
-        focusButton.textContent = "📍 スライドで表示";
-      } else {
-        focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
-      }
-
-      actions.append(focusButton);
-      li.append(meta, title, summary, actions);
+      li.append(header, summary);
       list.appendChild(li);
     });
-
-    highlightFeedback(state.pinMode.isActive
-      ? state.pinMode.feedbackId
-      : (state.openPinId ? findPinById(state.openPinId)?.feedbackId : null));
-
-    updateFeedbackListPinStates();
-    updatePinModeBadge();
   }
 
-  function updateFeedbackListPinStates() {
-    if (!state.ui.feedbackList) return;
-    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
-    items.forEach((item) => {
-      const feedbackId = item.dataset.feedbackId;
-      const anchors = getAnchorsForFeedback(feedbackId);
-      const pinned = anchors.length > 0;
-      if (pinned) {
-        item.dataset.status = "pinned";
-      } else {
-        item.removeAttribute("data-status");
-      }
-      const focusButton = item.querySelector('[data-action="focus"]');
-      if (focusButton) {
-        focusButton.disabled = anchors.length === 0;
-        if (anchors.length === 0) {
-          focusButton.textContent = "位置情報なし";
-        } else if (anchors.length === 1) {
-          focusButton.textContent = "📍 スライドで表示";
-        } else {
-          focusButton.textContent = `📍 ${anchors.length} 箇所を表示`;
-        }
-      }
-    });
-  }
-
-  function handleFeedbackListClick(event) {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const action = target.dataset.action;
-    const feedbackId = target.dataset.feedbackId;
-    if (!action || !feedbackId) return;
-
-    if (action === "focus") {
-      event.preventDefault();
-      focusFeedback(feedbackId);
-    }
+  function renderFeedbackList() {
+    // Legacy function - now delegates to popup
+    renderFeedbackPopup();
   }
 
   function focusFeedback(feedbackId) {
@@ -5187,7 +5826,6 @@ ${rawText}`;
 
     updatePinOverlayVisibility();
     updatePinModeBadge();
-    updateFeedbackListPinStates();
     highlightFeedback(feedbackId, { scrollIntoView: true });
     updatePinOverlayBounds();
   }
@@ -5203,7 +5841,6 @@ ${rawText}`;
 
     updatePinOverlayVisibility();
     updatePinModeBadge();
-    updateFeedbackListPinStates();
 
     if (reason !== "placed") {
       const openFeedbackId = state.openPinId ? findPinById(state.openPinId)?.feedbackId : null;
@@ -5212,25 +5849,7 @@ ${rawText}`;
   }
 
   function updatePinModeBadge() {
-    if (!state.ui.pinModeBadge) return;
-    if (state.pinMode.isActive) {
-      const feedback = state.feedbackItems.find((item) => item.id === state.pinMode.feedbackId);
-      state.ui.pinModeBadge.hidden = false;
-      state.ui.pinModeBadge.textContent = feedback
-        ? `ピン留め中: ${feedback.title || "指摘"}`
-        : "ピン留めモード";
-    } else {
-      const totalPins = Object.values(state.pinsBySlide || {}).reduce(
-        (sum, pinList) => sum + (Array.isArray(pinList) ? pinList.length : 0),
-        0
-      );
-      if (totalPins > 0) {
-        state.ui.pinModeBadge.hidden = false;
-        state.ui.pinModeBadge.textContent = `📍 ${totalPins}箇所ハイライト中`;
-      } else {
-        state.ui.pinModeBadge.hidden = true;
-      }
-    }
+    // No longer needed - removed from UI
   }
 
   function handlePinKeydown(event) {
@@ -5277,7 +5896,45 @@ ${rawText}`;
     return pin;
   }
 
+  /**
+   * 吹き出しの最適な位置を計算（画面端を考慮して自動調整）
+   * @param {number} pinX - ピンのX座標（0-1の正規化座標）
+   * @param {number} pinY - ピンのY座標（0-1の正規化座標）
+   * @returns {{position: string, offset: {x: string, y: string}, arrowClass: string}}
+   */
+  const calculateBubblePosition = (pinX, pinY) => {
+    const EDGE_THRESHOLD = 0.3; // 画面端の判定閾値（30%）
+    const BUBBLE_OFFSET = 12; // 吹き出しとピンの間隔(px)
+
+    // デフォルトは右側に表示
+    let position = 'right';
+    let arrowClass = 'arrow-left';
+
+    // 右端に近い場合は左側に表示
+    if (pinX > 1 - EDGE_THRESHOLD) {
+      position = 'left';
+      arrowClass = 'arrow-right';
+    }
+    // 上端に近い場合は下側に表示
+    else if (pinY < EDGE_THRESHOLD) {
+      position = 'bottom';
+      arrowClass = 'arrow-top';
+    }
+    // 下端に近い場合は上側に表示
+    else if (pinY > 1 - EDGE_THRESHOLD) {
+      position = 'top';
+      arrowClass = 'arrow-bottom';
+    }
+
+    return {
+      position,
+      arrowClass,
+      offset: BUBBLE_OFFSET
+    };
+  };
+
   function renderPinsForCurrentSlide() {
+    // ピン表示を完全に無効化（ポップアップリストのみ使用）
     if (!state.pinOverlayPins) return;
 
     updatePinOverlayBounds();
@@ -5286,105 +5943,16 @@ ${rawText}`;
     const slidePage = slideIndex >= 0 ? slideIndex + 1 : 1;
 
     const pins = state.pinsBySlide[slidePage] || [];
-    debugLog('Rendering pins for slide', slidePage, pins);
+    debugLog('Pins exist for slide', slidePage, pins.length, 'but not rendering them (hidden by design)');
+
+    // ピンとターゲットを非表示に
     state.pinOverlayPins.innerHTML = "";
     if (state.pinOverlayTargets) {
       state.pinOverlayTargets.innerHTML = "";
     }
 
-    pins.forEach((pin, index) => {
-      if (state.pinOverlayTargets && pin.rect) {
-        const target = document.createElement("div");
-        target.className = "gemini-pin-overlay__target";
-        target.dataset.pinId = pin.pinId;
-        target.style.left = `${(pin.rect.x || 0) * 100}%`;
-        target.style.top = `${(pin.rect.y || 0) * 100}%`;
-        target.style.width = `${(pin.rect.width || 0) * 100}%`;
-        target.style.height = `${(pin.rect.height || 0) * 100}%`;
-
-        debugLog(`Pin ${index + 1} target rectangle:`, {
-          left: target.style.left,
-          top: target.style.top,
-          width: target.style.width,
-          height: target.style.height,
-          rectData: pin.rect
-        });
-
-        if (state.openPinId === pin.pinId) {
-          target.classList.add("is-open");
-        }
-        state.pinOverlayTargets.appendChild(target);
-      }
-
-      const pinButton = document.createElement("button");
-      pinButton.type = "button";
-      pinButton.className = "gemini-pin";
-      pinButton.dataset.pinId = pin.pinId;
-      pinButton.dataset.feedbackId = pin.feedbackId;
-
-      // ピンの位置: 矩形がある場合は矩形の上部中央、なければposition座標を使用
-      let pinX, pinY;
-
-      // 矩形が存在し、かつ有効な値を持つ場合
-      if (pin.rect && typeof pin.rect.x === 'number' && typeof pin.rect.y === 'number') {
-        // 矩形の上部中央に配置
-        pinX = (pin.rect.x || 0) + (pin.rect.width || 0) / 2;
-        pinY = (pin.rect.y || 0);
-        debugLog(`Pin ${index + 1} using rect:`, {
-          rect: pin.rect,
-          calculatedX: pinX,
-          calculatedY: pinY
-        });
-      } else {
-        // フォールバック: position座標
-        pinX = pin.position?.x || 0;
-        pinY = pin.position?.y || 0;
-        debugLog(`Pin ${index + 1} using position (no valid rect):`, {
-          hasRect: !!pin.rect,
-          rect: pin.rect,
-          position: pin.position,
-          calculatedX: pinX,
-          calculatedY: pinY
-        });
-      }
-
-      pinButton.style.left = `${pinX * 100}%`;
-      pinButton.style.top = `${pinY * 100}%`;
-
-      debugLog(`Pin ${index + 1} final DOM styles:`, {
-        left: pinButton.style.left,
-        top: pinButton.style.top,
-        pinXRaw: pinX,
-        pinYRaw: pinY
-      });
-
-      if (state.openPinId === pin.pinId) {
-        pinButton.classList.add("is-open");
-      }
-
-      const icon = document.createElement("span");
-      icon.className = "gemini-pin__icon";
-      icon.textContent = `📍${index + 1}`;
-
-      const bubble = document.createElement("div");
-      bubble.className = "gemini-pin__bubble";
-
-      const title = document.createElement("span");
-      title.className = "gemini-pin__bubble-title";
-      const feedback = state.feedbackItems.find((item) => item.id === pin.feedbackId);
-      title.textContent = feedback?.title || `指摘 ${index + 1}`;
-
-      const body = document.createElement("p");
-      body.className = "gemini-pin__bubble-body";
-      body.textContent = feedback?.summary || feedback?.body || "";
-
-      bubble.append(title, body);
-      pinButton.append(icon, bubble);
-      state.pinOverlayPins.appendChild(pinButton);
-    });
-
+    // ピンモード時のみオーバーレイを表示
     updatePinOverlayVisibility();
-    updateFeedbackListPinStates();
   }
 
   function handlePinContainerClick(event) {
@@ -5423,22 +5991,10 @@ ${rawText}`;
     const feedbackId = pin?.feedbackId || null;
 
     highlightFeedback(feedbackId, options);
-    updateFeedbackListPinStates();
   }
 
   function highlightFeedback(feedbackId, options = {}) {
-    if (!state.ui.feedbackList) return;
-    const items = state.ui.feedbackList.querySelectorAll(".feedback-item");
-    items.forEach((item) => {
-      const isTarget = feedbackId && item.dataset.feedbackId === feedbackId;
-      item.classList.toggle("is-highlighted", Boolean(isTarget));
-      if (isTarget && options.scrollIntoView) {
-        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    });
-    if (!feedbackId) {
-      items.forEach((item) => item.classList.remove("is-highlighted"));
-    }
+    // No longer needed - feedback list moved to popup
   }
 
   function updatePinOverlayBounds() {
@@ -5587,6 +6143,45 @@ ${rawText}`;
   function getCurrentSlidePageNumber() {
     const index = getActiveSlideIndex();
     return index >= 0 ? index + 1 : 1;
+  }
+
+  /**
+   * 現在のスライドIDを取得
+   * @returns {string|null} スライドID (例: "p3", "g12345678")
+   */
+  function getCurrentSlideId() {
+    const hash = window.location.hash;
+    const match = hash.match(/#slide=id\.(.+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * 指定したスライドIDのスライドに移動
+   * @param {string} slideId - スライドID
+   */
+  function navigateToSlideById(slideId) {
+    if (!slideId) return;
+    window.location.hash = `#slide=id.${slideId}`;
+  }
+
+  /**
+   * 指定したインデックスのスライドに移動（フィルムストリップのサムネイルをクリック）
+   * @param {number} slideIndex - スライドのインデックス（0始まり）
+   */
+  function navigateToSlideByIndex(slideIndex) {
+    if (typeof slideIndex !== 'number' || slideIndex < 0) return;
+
+    const slideNodes = getSlideOptionNodes();
+    if (slideIndex >= slideNodes.length) {
+      console.warn('[Gemini Slides] slideIndex out of range:', slideIndex, 'max:', slideNodes.length - 1);
+      return;
+    }
+
+    const targetNode = slideNodes[slideIndex];
+    if (targetNode) {
+      console.log('[Gemini Slides] Navigating to slide index:', slideIndex);
+      targetNode.click();  // サムネイルをクリックしてスライド移動
+    }
   }
 
   /**
