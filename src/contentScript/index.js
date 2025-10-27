@@ -1320,6 +1320,35 @@
     if (geminiIconLarge) {
       geminiIconLarge.src = chrome.runtime.getURL('assets/gemini-icon.png');
     }
+
+    // Store geminiIconLarge in state for later updates
+    state.ui.geminiIconLarge = geminiIconLarge;
+  }
+
+  /**
+   * Update the feedback button icon based on status
+   * @param {string} iconName - Icon name: "default", "question", "happy", "worry", "angry", "wkwk"
+   */
+  function updateFeedbackButtonIcon(iconName) {
+    console.log(`[FeedbackIcon] Updating to: "${iconName}"`);
+
+    if (!state.ui.geminiIconLarge) {
+      console.warn('[FeedbackIcon] geminiIconLarge element not found');
+      return;
+    }
+
+    const iconPaths = {
+      default: 'assets/gemini-icon.png',
+      question: 'assets/question.png',
+      happy: 'assets/happy.png',
+      worry: 'assets/worry.png',
+      angry: 'assets/angry.png',
+      wkwk: 'assets/wkwk.png'
+    };
+
+    const iconPath = iconPaths[iconName] || iconPaths.default;
+    state.ui.geminiIconLarge.src = chrome.runtime.getURL(iconPath);
+    console.log(`[FeedbackIcon] Icon updated to: ${iconPath}`);
   }
 
   function hydratePromptsUI() {
@@ -1459,6 +1488,10 @@
     if (!state.ui.runButton) return;
     state.ui.runButton.disabled = true;
 
+    // アイコンを分析中に変更
+    chrome.runtime.sendMessage({ type: "SET_ICON_ANALYZING" }).catch((err) => console.error('[Icon] Failed to send SET_ICON_ANALYZING:', err));
+    updateFeedbackButtonIcon('question'); // 右下アイコンも変更
+
     // Show loading state with spinner
     setStatusWithSpinner("Collecting slide content…", "info");
 
@@ -1513,6 +1546,9 @@
       renderResult();
     } catch (error) {
       console.error('[Gemini Slides] Error in handleRunCheck:', error);
+      // アイコンをエラー状態に変更
+      chrome.runtime.sendMessage({ type: "SET_ICON_ERROR" }).catch((err) => console.error('[Icon] Failed to send SET_ICON_ERROR:', err));
+      updateFeedbackButtonIcon('worry'); // 右下アイコンも変更（エラー時は心配アイコン）
       if (error.message?.includes("Extension context invalidated")) {
         setStatus("Extension was reloaded. Please refresh the page to continue.", "error");
       } else {
@@ -1531,6 +1567,10 @@
 
     state.ui.runAllButton.disabled = true;
     state.ui.runButton.disabled = true;
+
+    // アイコンを分析中に変更
+    chrome.runtime.sendMessage({ type: "SET_ICON_ANALYZING" }).catch((err) => console.error('[Icon] Failed to send SET_ICON_ANALYZING:', err));
+    updateFeedbackButtonIcon('question'); // 右下アイコンも変更
 
     try {
       // First, force-load all thumbnails by scrolling the filmstrip
@@ -1670,6 +1710,9 @@
 
     } catch (error) {
       console.error('[Gemini Slides] Error in handleRunAllSlides:', error);
+      // アイコンをエラー状態に変更
+      chrome.runtime.sendMessage({ type: "SET_ICON_ERROR" }).catch((err) => console.error('[Icon] Failed to send SET_ICON_ERROR:', err));
+      updateFeedbackButtonIcon('worry'); // 右下アイコンも変更（エラー時は心配アイコン）
       setStatus(error instanceof Error ? error.message : String(error), "error");
     } finally {
       state.ui.runAllButton.disabled = false;
@@ -2924,8 +2967,14 @@
    * 新規プロジェクトを作成（Phase 6: ダイアログベース）
    */
   async function createNewProject() {
-    // タイトルを事前に取得
-    const defaultTitle = await getPresentationTitle() || '';
+    // タイトルを事前に取得（エラー時は空文字列を使用）
+    let defaultTitle = '';
+    try {
+      defaultTitle = await getPresentationTitle() || '';
+    } catch (error) {
+      console.warn('[Gemini Slides] Failed to get presentation title:', error);
+      defaultTitle = '';
+    }
 
     return new Promise((resolve) => {
       // ダイアログを作成
@@ -4645,6 +4694,18 @@ ${rawText}`;
     state.feedbackItems = Array.isArray(items)
       ? items.map((item) => ({ ...item }))
       : [];
+
+    // フィードバック数に応じてアイコンを変更
+    const feedbackCount = state.feedbackItems.length;
+    chrome.runtime.sendMessage({
+      type: "SET_ICON_COMPLETED",
+      feedbackCount: feedbackCount
+    }).catch((err) => console.error('[Icon] Failed to send SET_ICON_COMPLETED:', err));
+
+    // 右下アイコンも変更（フィードバック数に応じて）
+    const iconName = feedbackCount <= 3 ? 'happy' : 'angry';
+    updateFeedbackButtonIcon(iconName);
+
     regeneratePinsFromFeedback();
     renderFeedbackList();
     updatePinOverlayVisibility();
@@ -5603,7 +5664,7 @@ ${rawText}`;
         console.log('[Gemini Slides] Already on target slide:', targetSlideId);
       }
     }
-    // 優先順位2: slideIndexを使用（フォールバック）
+    // 優先順位3: slideIndexを使用（フォールバック）
     else if (typeof targetSlideIndex === 'number' && targetSlideIndex >= 0) {
       const currentSlideIndex = getActiveSlideIndex();
       if (currentSlideIndex !== targetSlideIndex) {
@@ -5611,29 +5672,23 @@ ${rawText}`;
         navigateToSlideByIndex(targetSlideIndex);
         navigationSuccess = true;
         // スライド移動後に少し待ってから吹き出しを表示
-        if (anchor && anchor.rect) {
-          setTimeout(() => {
-            renderTemporaryBubble(feedback, anchor);
-          }, 500);
-        }
+        setTimeout(() => {
+          renderTemporaryBubble(feedback, anchor);
+        }, 500);
         return;
       }
     }
-    // スライド情報がない場合
+    // スライド情報がない場合は、現在のスライドでフィードバックを表示
     else {
-      console.error('[Gemini Slides] ✗ No slide information for feedback:', feedbackId);
-      alert('このフィードバックにはスライド情報が紐付いていません');
-      return;
+      console.log('[Gemini Slides] ⚠ No slide information for feedback, displaying on current slide:', feedbackId);
     }
 
-    // 既に正しいスライドにいる場合、吹き出しを表示（アンカーがある場合のみ）
-    if (anchor && anchor.rect) {
-      renderTemporaryBubble(feedback, anchor);
-    }
+    // 既に正しいスライドにいる場合、またはスライド情報がない場合、吹き出しを表示
+    renderTemporaryBubble(feedback, anchor);
   }
 
   function renderTemporaryBubble(feedback, anchor) {
-    if (!state.pinOverlay || !anchor.rect) return;
+    if (!state.pinOverlay) return;
 
     updatePinOverlayBounds();
 
@@ -5642,9 +5697,10 @@ ${rawText}`;
     bubble.id = "gemini-temp-feedback-bubble";
     bubble.className = "gemini-temp-bubble";
 
-    // 矩形の位置を計算
-    const rectX = (anchor.rect.x || 0) + (anchor.rect.width || 0) / 2;
-    const rectY = (anchor.rect.y || 0);
+    // anchor.rectがある場合は位置を計算、ない場合は画面中央に表示
+    const hasRect = anchor && anchor.rect;
+    const rectX = hasRect ? (anchor.rect.x || 0) + (anchor.rect.width || 0) / 2 : 0.5;
+    const rectY = hasRect ? (anchor.rect.y || 0) : 0.5;
 
     // 吹き出しの位置を自動計算
     const bubblePos = calculateBubblePosition(rectX, rectY);
@@ -5653,9 +5709,16 @@ ${rawText}`;
     bubble.style.position = "absolute";
     bubble.style.left = `${rectX * 100}%`;
     bubble.style.top = `${rectY * 100}%`;
-    bubble.style.transform = getBubbleTransform(bubblePos.position);
-    bubble.dataset.position = bubblePos.position;
-    bubble.dataset.arrowClass = bubblePos.arrowClass;
+
+    // anchor.rectがない場合は、中央寄せのtransformを使用
+    if (!hasRect) {
+      bubble.style.transform = "translate(-50%, -50%)";
+      bubble.classList.add("no-anchor"); // スタイル調整用のクラス
+    } else {
+      bubble.style.transform = getBubbleTransform(bubblePos.position);
+      bubble.dataset.position = bubblePos.position;
+      bubble.dataset.arrowClass = bubblePos.arrowClass;
+    }
 
     // コンテンツを作成
     const content = document.createElement("div");
@@ -5677,8 +5740,8 @@ ${rawText}`;
     content.append(title, body, closeBtn);
     bubble.appendChild(content);
 
-    // ハイライト矩形を作成
-    if (state.pinOverlayTargets && anchor.rect) {
+    // ハイライト矩形を作成（anchor.rectがある場合のみ）
+    if (state.pinOverlayTargets && hasRect) {
       const highlight = document.createElement("div");
       highlight.className = "gemini-temp-highlight";
       highlight.style.left = `${(anchor.rect.x || 0) * 100}%`;

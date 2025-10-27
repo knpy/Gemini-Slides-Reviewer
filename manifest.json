@@ -18,7 +18,12 @@
     "type": "module"
   },
   "action": {
-    "default_title": "けんしろうAI"
+    "default_title": "けんしろうAI",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
   },
   "options_page": "src/options/options.html",
   "icons": {
@@ -43,7 +48,27 @@
       "resources": [
         "src/common/prompts.js",
         "src/config/runtimeConfig.json",
-        "assets/gemini-icon.png"
+        "assets/gemini-icon.png",
+        "assets/wkwk.png",
+        "assets/happy.png",
+        "assets/question.png",
+        "assets/worry.png",
+        "assets/angry.png",
+        "assets/wkwk16.png",
+        "assets/wkwk48.png",
+        "assets/wkwk128.png",
+        "assets/happy16.png",
+        "assets/happy48.png",
+        "assets/happy128.png",
+        "assets/question16.png",
+        "assets/question48.png",
+        "assets/question128.png",
+        "assets/worry16.png",
+        "assets/worry48.png",
+        "assets/worry128.png",
+        "assets/angry16.png",
+        "assets/angry48.png",
+        "assets/angry128.png"
       ],
       "matches": [
         "https://docs.google.com/*"
