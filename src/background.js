@@ -41,6 +41,59 @@ let runtimeConfig = {
 
 const runtimeConfigPromise = loadRuntimeConfig();
 
+console.log('[Background] Service Worker started - けんしろうAI extension loaded');
+
+/**
+ * 拡張機能のアイコンを状況に応じて変更する
+ * @param {string} iconName - アイコン名 ("default", "question", "happy", "worry", "angry", "wkwk")
+ */
+async function setExtensionIcon(iconName) {
+  console.log(`[Icon] setExtensionIcon called with: "${iconName}"`);
+
+  try {
+    const iconPaths = {
+      default: {
+        "16": "assets/icon16.png",
+        "48": "assets/icon48.png",
+        "128": "assets/icon128.png"
+      },
+      question: {
+        "16": "assets/question16.png",
+        "48": "assets/question48.png",
+        "128": "assets/question128.png"
+      },
+      happy: {
+        "16": "assets/happy16.png",
+        "48": "assets/happy48.png",
+        "128": "assets/happy128.png"
+      },
+      worry: {
+        "16": "assets/worry16.png",
+        "48": "assets/worry48.png",
+        "128": "assets/worry128.png"
+      },
+      angry: {
+        "16": "assets/angry16.png",
+        "48": "assets/angry48.png",
+        "128": "assets/angry128.png"
+      },
+      wkwk: {
+        "16": "assets/wkwk16.png",
+        "48": "assets/wkwk48.png",
+        "128": "assets/wkwk128.png"
+      }
+    };
+
+    const path = iconPaths[iconName] || iconPaths.default;
+    console.log(`[Icon] Attempting to set icon with paths:`, path);
+
+    await chrome.action.setIcon({ path });
+    console.log(`[Icon] Successfully changed icon to "${iconName}"`);
+  } catch (error) {
+    console.error(`[Icon] Failed to set icon to "${iconName}":`, error);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
 });
@@ -60,7 +113,41 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
+console.log('[Background] Message listener registered');
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // アイコン変更リクエスト
+  if (message?.type === "SET_ICON_ANALYZING") {
+    console.log('[Icon] Received SET_ICON_ANALYZING request');
+    setExtensionIcon("question");
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "SET_ICON_COMPLETED") {
+    const feedbackCount = message.feedbackCount || 0;
+    // フィードバック数が3以下なら happy、それ以上なら angry
+    const iconName = feedbackCount <= 3 ? "happy" : "angry";
+    console.log(`[Icon] Received SET_ICON_COMPLETED request (feedbackCount: ${feedbackCount}, icon: ${iconName})`);
+    setExtensionIcon(iconName);
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "SET_ICON_ERROR") {
+    console.log('[Icon] Received SET_ICON_ERROR request');
+    setExtensionIcon("worry");
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "SET_ICON_IDLE") {
+    console.log('[Icon] Received SET_ICON_IDLE request');
+    setExtensionIcon("default");
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (message?.type === "GEMINI_RUN_CHECK") {
     (async () => {
       try {
